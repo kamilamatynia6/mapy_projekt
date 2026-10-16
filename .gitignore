@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+*.tif
+outputs/
+.DS_Store
+._*
+.idea/
+.chart-data-*/
