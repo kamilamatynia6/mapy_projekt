@@ -19,24 +19,32 @@ aside section{margin-bottom:22px}
 <p style="margin:4px 0 0;font-size:14px;color:#d8e7e8">Atlas środowiskowy • scena z 7 sierpnia 2013 • Kamila Matynia, Amelia Hajduga, Rafał Złoza</p>
 </header>
 <main><div id="map" aria-label="Interaktywna mapa wskaźników"></div><aside>
-
-<!-- TODO Kamila: przełącznik warstw NDVI / NDBI / MNDWI / RGB -->
-
+ 
+<!-- Amelia: wybór warstwy i opis -->
+<section>
+<h2>Warstwa mapy</h2>
+<select id="layer" style="width:100%;padding:6px;font-size:15px">
+<option value="NDVI">NDVI – roślinność</option>
+<option value="NDBI">NDBI – zabudowa</option>
+<option value="MNDWI">MNDWI – woda</option>
+<option value="RGB">RGB – naturalne barwy</option>
+</select>
+<p id="explain" style="font-size:14px"></p>
+</section>
+ 
 <!-- ------------------------------------------------------------ -->
-
-<!-- TODO Amelia: legenda (pasek kolorów od -1 do 1) i suwak przezroczystości -->
-
+ 
 <!-- ------------------------------------------------------------ -->
-
+ 
 <!-- TODO Rafał: panel statystyk z summary.json i przycisk "Cały obszar" -->
-
+ 
 <p id="state">Wczytywanie mapy…</p>
 </aside></main>
 <script src="vendor/leaflet.js"></script><script>
 const cfg=__MAP_CONFIG__;
 const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17}).fitBounds(cfg.bounds);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
-
+ 
 // Wspólna część: pokazuje jedną warstwę wynikową (domyślnie NDVI).
 // showLayer(nazwa) zmienia warstwę, a funkcje dodane do onLayerChange
 // są wywoływane po każdej zmianie (np. żeby odświeżyć legendę).
@@ -50,19 +58,19 @@ function showLayer(name){
   overlay.on('tileerror',()=>document.querySelector('#state').textContent='Nie udało się odczytać kafelka.');
   onLayerChange.forEach(f=>f(name));
 }
-
+ 
 // Granica obszaru (AOI).
 fetch('aoi.geojson').then(r=>r.json()).then(g=>L.geoJSON(g,{style:{color:'#143843',weight:1.2,fill:false},interactive:false}).addTo(map));
-
+ 
 // TODO Kamila: obsługa przełącznika warstw
-
+ 
 // ------------------------------------------------------------
-
+ 
 // TODO Amelia: obsługa legendy i suwaka przezroczystości
-
+ 
 // ------------------------------------------------------------
-
+ 
 // TODO Rafał: wczytanie summary.json, panel statystyk, przycisk "Cały obszar"
-
+ 
 showLayer(currentLayer);
 </script></body></html>
