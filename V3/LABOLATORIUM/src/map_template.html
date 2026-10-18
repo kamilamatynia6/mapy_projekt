@@ -14,28 +14,51 @@ aside section{margin-bottom:22px}
 @media(max-width:700px){main{display:flex;flex-direction:column;height:auto}#map{height:62vh;min-height:350px}}
 </style></head><body>
 <header>
-<h1>Landsat 8: Kraków i okolice</h1>
-<!-- TODO Kamila: tutaj podtytuł z datą sceny i nazwiskami autorów -->
+<h1>Atlas środowiskowy Krakowa</h1>
+<!-- Amelia: podtytuł z datą sceny i autorami -->
+<p style="margin:4px 0 0;font-size:14px;color:#d8e7e8">Atlas środowiskowy • scena z 7 sierpnia 2013 • Kamila Matynia, Amelia Hajduga, Rafał Złoza</p>
 </header>
 <main><div id="map" aria-label="Interaktywna mapa wskaźników"></div><aside>
-
-<!-- TODO Kamila: przełącznik warstw NDVI / NDBI / MNDWI / RGB -->
-
+ 
+<!-- Amelia: wybór warstwy i opis -->
+<section>
+<h2>Warstwa mapy</h2>
+<select id="layer" style="width:100%;padding:6px;font-size:15px">
+<option value="NDVI">NDVI – roślinność</option>
+<option value="NDBI">NDBI – zabudowa</option>
+<option value="MNDWI">MNDWI – woda</option>
+<option value="RGB">RGB – naturalne barwy</option>
+</select>
+<p id="explain" style="font-size:14px"></p>
+</section>
+ 
+<!-- Amelia: legenda -->
+<section id="legend">
+<h2>Legenda</h2>
+<div id="ramp" style="height:16px;border-radius:4px;border:1px solid #9bb"></div>
+<div style="display:flex;justify-content:space-between;font-size:13px"><span>−1</span><span>0</span><span>1</span></div>
+</section>
+ 
+<!-- Amelia: suwak przezroczystości -->
+<section>
+<h2>Przezroczystość</h2>
+<input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85" style="width:100%">
+<span id="opacityValue">85%</span>
+</section>
+ 
 <!-- ------------------------------------------------------------ -->
-
-<!-- TODO Amelia: legenda (pasek kolorów od -1 do 1) i suwak przezroczystości -->
-
+ 
 <!-- ------------------------------------------------------------ -->
-
+ 
 <!-- TODO Rafał: panel statystyk z summary.json i przycisk "Cały obszar" -->
-
+ 
 <p id="state">Wczytywanie mapy…</p>
 </aside></main>
 <script src="vendor/leaflet.js"></script><script>
 const cfg=__MAP_CONFIG__;
 const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17}).fitBounds(cfg.bounds);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
-
+ 
 // Wspólna część: pokazuje jedną warstwę wynikową (domyślnie NDVI).
 // showLayer(nazwa) zmienia warstwę, a funkcje dodane do onLayerChange
 // są wywoływane po każdej zmianie (np. żeby odświeżyć legendę).
@@ -49,19 +72,41 @@ function showLayer(name){
   overlay.on('tileerror',()=>document.querySelector('#state').textContent='Nie udało się odczytać kafelka.');
   onLayerChange.forEach(f=>f(name));
 }
-
+ 
 // Granica obszaru (AOI).
 fetch('aoi.geojson').then(r=>r.json()).then(g=>L.geoJSON(g,{style:{color:'#143843',weight:1.2,fill:false},interactive:false}).addTo(map));
-
-// TODO Kamila: obsługa przełącznika warstw
-
+ 
+// Amelia: opisy warstw i przełącznik
+const opisy={
+  NDVI:'NDVI = (B5 − B4) / (B5 + B4). Wysokie wartości (zielone) oznaczają roślinność.',
+  NDBI:'NDBI = (B6 − B5) / (B6 + B5). Dodatnie wartości mogą wskazywać zabudowę lub odsłoniętą glebę.',
+  MNDWI:'MNDWI = (B3 − B6) / (B3 + B6). Dodatnie wartości wskazują wody powierzchniowe.',
+  RGB:'Kompozycja w naturalnych barwach: kanały B4 / B3 / B2.'
+};
+const wybor=document.querySelector('#layer');
+wybor.addEventListener('change',()=>showLayer(wybor.value));
+onLayerChange.push(name=>{document.querySelector('#explain').textContent=opisy[name]||'';});
+ 
 // ------------------------------------------------------------
-
-// TODO Amelia: obsługa legendy i suwaka przezroczystości
-
+ 
+// Amelia: legenda (pasek kolorów dla wybranej warstwy, ukryty dla RGB)
+onLayerChange.push(name=>{
+  const ramp=cfg.ramps&&cfg.ramps[name];
+  document.querySelector('#legend').hidden=!ramp;
+  if(ramp)document.querySelector('#ramp').style.background='linear-gradient(to right,'+ramp.join(',')+')';
+});
+ 
+// Amelia: suwak przezroczystości i skala mapy
+document.querySelector('#opacity').addEventListener('input',e=>{
+  currentOpacity=Number(e.target.value);
+  if(overlay)overlay.setOpacity(currentOpacity);
+  document.querySelector('#opacityValue').textContent=Math.round(currentOpacity*100)+'%';
+});
+L.control.scale({imperial:false}).addTo(map);
+ 
 // ------------------------------------------------------------
-
+ 
 // TODO Rafał: wczytanie summary.json, panel statystyk, przycisk "Cały obszar"
-
+ 
 showLayer(currentLayer);
 </script></body></html>
