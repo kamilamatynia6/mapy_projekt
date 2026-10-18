@@ -32,6 +32,13 @@ aside section{margin-bottom:22px}
 <p id="explain" style="font-size:14px"></p>
 </section>
  
+<!-- Amelia: legenda -->
+<section id="legend">
+<h2>Legenda</h2>
+<div id="ramp" style="height:16px;border-radius:4px;border:1px solid #9bb"></div>
+<div style="display:flex;justify-content:space-between;font-size:13px"><span>−1</span><span>0</span><span>1</span></div>
+</section>
+ 
 <!-- ------------------------------------------------------------ -->
  
 <!-- ------------------------------------------------------------ -->
@@ -75,7 +82,12 @@ onLayerChange.push(name=>{document.querySelector('#explain').textContent=opisy[n
  
 // ------------------------------------------------------------
  
-// TODO Amelia: obsługa legendy i suwaka przezroczystości
+// Amelia: legenda (pasek kolorów dla wybranej warstwy, ukryty dla RGB)
+onLayerChange.push(name=>{
+  const ramp=cfg.ramps&&cfg.ramps[name];
+  document.querySelector('#legend').hidden=!ramp;
+  if(ramp)document.querySelector('#ramp').style.background='linear-gradient(to right,'+ramp.join(',')+')';
+});
  
 // ------------------------------------------------------------
  
