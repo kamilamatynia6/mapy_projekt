@@ -112,8 +112,20 @@ def calculate_indices(reflectance: dict) -> dict:
 
 def stretch_rgb(reflectance: dict) -> np.ndarray:
     """RGB 4/3/2: osobne rozciągnięcie 2-98 percentyl wyłącznie do prezentacji."""
+    return stretch_bands(reflectance, (4, 3, 2))
+
+
+# Atlas (Kamila): kompozycje w fałszywych barwach – te same kanały w innej kolejności
+COMPOSITES = {
+    'PODCZERWIEN': (5, 4, 3),  # roślinność świeci na czerwono
+    'MIASTO': (6, 5, 4),       # zabudowa i odkryty grunt odróżniają się od zieleni
+}
+
+
+def stretch_bands(reflectance: dict, bands: tuple) -> np.ndarray:
+    """Dowolna kompozycja 3 kanałów z rozciągnięciem 2-98 percentyl (tylko do prezentacji)."""
     channels = []
-    for b in (4, 3, 2):
+    for b in bands:
         a = reflectance[b]
         lo, hi = np.nanpercentile(a, (2, 98))
         scaled = np.clip((a - lo) / max(hi - lo, 1e-6), 0, 1)
@@ -222,6 +234,8 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
             'outside_minus1_plus1':int((np.abs(finite)>1).sum())}
         write_geotiff(raster_dir/f'{name}.tif',a,scene['profile'])
     layers={'RGB':stretch_rgb(scene['reflectance']),**{name:index_rgba(a,name) for name,a in indices.items()}}
+    # Atlas (Kamila): dodatkowe warstwy mapy
+    layers.update({name:stretch_bands(scene['reflectance'],bands) for name,bands in COMPOSITES.items()})
     for name,rgba in layers.items():
         p=raster_dir/f'{name}_display.tif'
         write_geotiff(p,rgba,scene['profile'],rgba=True)
