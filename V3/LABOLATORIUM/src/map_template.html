@@ -59,6 +59,12 @@ aside section{margin-bottom:22px}
 <div id="classList" style="font-size:14px"></div>
 </section>
 
+<!-- Kamila: panel statystyk całego obszaru (dane z summary.json) -->
+<section id="stats">
+<h2>Statystyki obszaru</h2>
+<div id="statsBody" style="font-size:14px">Wczytywanie…</div>
+</section>
+
 <!-- ------------------------------------------------------------ -->
  
 <!-- TODO Rafał: panel statystyk z summary.json i przycisk "Cały obszar" -->
@@ -130,6 +136,24 @@ document.querySelector('#classList').innerHTML=cfg.classes.map(c=>
   '<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'+
   '<span style="width:16px;height:16px;border-radius:3px;flex:none;background:'+c.color+'"></span>'+c.name+'</div>').join('');
 onLayerChange.push(name=>{document.querySelector('#classLegend').hidden=name!=='KLASY';});
+
+// Kamila: panel statystyk – wykres słupkowy udziału klas i tabela średnich wskaźników
+fetch('summary.json').then(r=>r.json()).then(s=>{
+  const km2=s.classes.reduce((sum,c)=>sum+c.km2,0);
+  const bars=s.classes.map(c=>
+    '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;gap:6px">'+
+    '<span>'+c.name.split(' (')[0]+'</span><b>'+c.percent.toFixed(1)+'%</b></div>'+
+    '<div style="background:#dde5e4;border-radius:3px;height:10px">'+
+    '<div style="width:'+c.percent+'%;min-width:2px;height:100%;border-radius:3px;background:'+c.color+'"></div></div>'+
+    '<div style="font-size:12px;color:#5b7480">'+c.km2.toLocaleString('pl-PL')+' km²</div></div>').join('');
+  const rows=Object.entries(s.indices).map(([name,v])=>
+    '<tr><td>'+name+'</td><td style="text-align:right">'+v.mean.toFixed(3)+'</td><td style="text-align:right">'+v.median.toFixed(3)+'</td></tr>').join('');
+  document.querySelector('#statsBody').innerHTML=
+    '<p style="margin:0 0 6px">Obszar z ważnymi danymi: <b>'+Math.round(km2).toLocaleString('pl-PL')+' km²</b> '+
+    '('+s.valid_pixels.toLocaleString('pl-PL')+' pikseli 30 × 30 m)</p>'+bars+
+    '<table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:13px">'+
+    '<tr><th style="text-align:left">Wskaźnik</th><th style="text-align:right">średnia</th><th style="text-align:right">mediana</th></tr>'+rows+'</table>';
+}).catch(()=>{document.querySelector('#statsBody').textContent='Statystyki widać po otwarciu strony przez serwer HTTP.';});
  
 // TODO Rafał: wczytanie summary.json, panel statystyk, przycisk "Cały obszar"
  
