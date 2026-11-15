@@ -22,7 +22,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX_BANDS = {'NDVI': (5, 4), 'NDBI': (6, 5), 'MNDWI': (3, 6)}
-CMAPS = {'NDVI': 'RdYlGn', 'NDBI': 'PuOr_r', 'MNDWI': 'BrBG'}
+CMAPS = {'NDVI': 'RdYlGn', 'NDBI': 'PuOr_r', 'MNDWI': 'BrBG', 'DEFICYT': 'RdYlGn_r'}
 NS = {'e': 'http://espa.cr.usgs.gov/v2'}
 
 
@@ -172,6 +172,13 @@ def class_stats(cls: np.ndarray, pixel_area_m2: float) -> list:
              'km2': round(float((cls == c['id']).sum()) * pixel_area_m2 / 1e6, 1)} for c in CLASSES]
 
 
+def green_deficit(indices: dict) -> np.ndarray:
+    """Atlas (Kamila): deficyt zieleni = NDBI − NDVI.
+    Dużo zabudowy i mało roślinności daje wartości bliskie 0 lub dodatnie,
+    las daje wartości bliskie −1. Wskaźnik pomocniczy, bez kalibracji terenowej."""
+    return (indices['NDBI'] - indices['NDVI']).astype('float32')
+
+
 def index_rgba(array: np.ndarray, name: str) -> np.ndarray:
     rgba = matplotlib.colormaps[CMAPS[name]](np.clip((array + 1) / 2, 0, 1), bytes=True)
     rgba[..., 3] = np.isfinite(array) * 255
@@ -278,6 +285,12 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     tr=scene['profile']['transform']
     summary['classes']=class_stats(cls,abs(tr.a*tr.e))
     layers['KLASY']=class_rgba(cls)
+    deficit=green_deficit(indices)
+    finite=deficit[np.isfinite(deficit)]
+    summary['deficit']={'mean':float(finite.mean()),'median':float(np.median(finite)),
+                        'share_above_0':round(100*float((finite>0).mean()),2)}
+    write_geotiff(raster_dir/'DEFICYT.tif',deficit,scene['profile'])
+    layers['DEFICYT']=index_rgba(deficit,'DEFICYT')
     for name,rgba in layers.items():
         p=raster_dir/f'{name}_display.tif'
         write_geotiff(p,rgba,scene['profile'],rgba=True)
@@ -289,7 +302,7 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     bounds=array_bounds(scene['profile']['height'],scene['profile']['width'],scene['profile']['transform'])
     w,s,e,n=transform_bounds(scene['profile']['crs'],'EPSG:4326',*bounds)
     config={'bounds':[[s,w],[n,e]],'minzoom':minzoom,'maxzoom':maxzoom,'date':summary['date'],
-            'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in indices},
+            'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in [*indices,'DEFICYT']},
             'classes':[{k:c[k] for k in ('id','name','color','rule')} for c in CLASSES]}
     template=(Path(__file__).parent/'map_template.html').read_text(encoding='utf-8')
     (site/'index.html').write_text(template.replace('__MAP_CONFIG__',json.dumps(config)),encoding='utf-8')
