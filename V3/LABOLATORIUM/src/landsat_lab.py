@@ -207,6 +207,34 @@ def grid_geojson(cls: np.ndarray, indices: dict, profile: dict, size_m=1000, min
     return {'type': 'FeatureCollection', 'features': features}
 
 
+def analysis_png(cls: np.ndarray, indices: dict, profile: dict, path: Path, step_m=60) -> dict:
+    """Atlas (Kamila): raster danych do analizy w przeglądarce, w siatce EPSG:4326
+    (piksel ok. 60 m), żeby strona mogła przeliczać współrzędne na piksel bez bibliotek.
+    Kanały PNG: R = klasa (0 = brak danych), G = NDVI, B = MNDWI; wartość = (wskaźnik + 1) * 127.5."""
+    h, w = cls.shape
+    west, south, east, north = transform_bounds(profile['crs'], 'EPSG:4326', *array_bounds(h, w, profile['transform']))
+    lat0 = math.radians((south + north) / 2)
+    width = int(math.ceil((east - west) / (step_m / (111320 * math.cos(lat0)))))
+    height = int(math.ceil((north - south) / (step_m / 110540)))
+    dst_transform = from_bounds(west, south, east, north, width, height)
+
+    def warp(a, dtype, nodata):
+        out = np.full((height, width), nodata, dtype=dtype)
+        reproject(a.astype(dtype), out, src_transform=profile['transform'], src_crs=profile['crs'],
+                  dst_transform=dst_transform, dst_crs='EPSG:4326', resampling=Resampling.nearest,
+                  src_nodata=nodata, dst_nodata=nodata)
+        return out
+
+    def encode(a):
+        v = warp(a, 'float32', np.nan)
+        return np.where(np.isfinite(v), np.clip(np.round((v + 1) * 127.5), 0, 255), 0).astype('uint8')
+
+    k = warp(cls, 'uint8', 0)
+    rgba = np.dstack([k, encode(indices['NDVI']), encode(indices['MNDWI']), np.full_like(k, 255)])
+    Image.fromarray(rgba, 'RGBA').save(path, optimize=True)
+    return {'url': path.name, 'bounds': [[south, west], [north, east]], 'width': width, 'height': height}
+
+
 def index_rgba(array: np.ndarray, name: str) -> np.ndarray:
     rgba = matplotlib.colormaps[CMAPS[name]](np.clip((array + 1) / 2, 0, 1), bytes=True)
     rgba[..., 3] = np.isfinite(array) * 255
@@ -322,6 +350,7 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     grid=grid_geojson(cls,indices,scene['profile'])
     (site/'siatka.geojson').write_text(json.dumps(grid,separators=(',',':')),encoding='utf-8')
     summary['grid_cells']=len(grid['features'])
+    probe=analysis_png(cls,indices,scene['profile'],site/'analiza.png')
     for name,rgba in layers.items():
         p=raster_dir/f'{name}_display.tif'
         write_geotiff(p,rgba,scene['profile'],rgba=True)
@@ -334,7 +363,8 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     w,s,e,n=transform_bounds(scene['profile']['crs'],'EPSG:4326',*bounds)
     config={'bounds':[[s,w],[n,e]],'minzoom':minzoom,'maxzoom':maxzoom,'date':summary['date'],
             'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in [*indices,'DEFICYT']},
-            'classes':[{k:c[k] for k in ('id','name','color','rule')} for c in CLASSES]}
+            'classes':[{k:c[k] for k in ('id','name','color','rule')} for c in CLASSES],
+            'probe':probe}
     template=(Path(__file__).parent/'map_template.html').read_text(encoding='utf-8')
     (site/'index.html').write_text(template.replace('__MAP_CONFIG__',json.dumps(config)),encoding='utf-8')
     summary['export_seconds']=round(time.perf_counter()-start,2)
