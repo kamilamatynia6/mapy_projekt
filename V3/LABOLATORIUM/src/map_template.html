@@ -364,6 +364,8 @@ function przystanek(i){
 wycieczka.addTo(map);
  
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora, suwaka porównania i kliknięcia w mapę
+// Wskazówki: w map.on('click', e => ...) pomiń kliknięcia z e.analiza === true (należą do analizy okolicy).
+// Wartości NDVI i MNDWI w punkcie można odczytać z rastra cfg.probe (patrz funkcja statystykiKola).
  
 showLayer(currentLayer);
 </script></body></html>
