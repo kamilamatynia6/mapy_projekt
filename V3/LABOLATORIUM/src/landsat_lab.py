@@ -134,6 +134,44 @@ def stretch_bands(reflectance: dict, bands: tuple) -> np.ndarray:
     return np.dstack([*channels, alpha])
 
 
+# Atlas (Kamila): klasy pokrycia terenu wyznaczane progami wskaźników.
+# Kolejność ma znaczenie: woda ma pierwszeństwo, potem gęsta i niska roślinność.
+CLASSES = [
+    {'id': 1, 'name': 'Woda', 'color': '#2c7fb8', 'rule': 'MNDWI > 0'},
+    {'id': 2, 'name': 'Gęsta roślinność (lasy, zarośla, bujne uprawy)', 'color': '#1a7f37', 'rule': 'NDVI ≥ 0.7'},
+    {'id': 3, 'name': 'Roślinność niska (łąki, pola, parki)', 'color': '#a6d96a', 'rule': '0.4 ≤ NDVI < 0.7'},
+    {'id': 4, 'name': 'Zabudowa i odkryty grunt', 'color': '#c0504d', 'rule': 'NDVI < 0.4'},
+]
+
+
+def classify(indices: dict) -> np.ndarray:
+    """Zwraca numer klasy dla każdego piksela; 0 = brak ważnych danych."""
+    ndvi, mndwi = indices['NDVI'], indices['MNDWI']
+    ok = np.isfinite(ndvi) & np.isfinite(indices['NDBI']) & np.isfinite(mndwi)
+    cls = np.zeros(ndvi.shape, dtype='uint8')
+    cls[ok] = 4
+    cls[ok & (ndvi >= 0.4)] = 3
+    cls[ok & (ndvi >= 0.7)] = 2
+    cls[ok & (mndwi > 0)] = 1
+    return cls
+
+
+def class_rgba(cls: np.ndarray) -> np.ndarray:
+    rgba = np.zeros((*cls.shape, 4), dtype='uint8')
+    for c in CLASSES:
+        rgb = [int(c['color'][i:i+2], 16) for i in (1, 3, 5)]
+        rgba[cls == c['id']] = [*rgb, 255]
+    return rgba
+
+
+def class_stats(cls: np.ndarray, pixel_area_m2: float) -> list:
+    """Udział (%) i powierzchnia (km²) każdej klasy."""
+    total = int((cls > 0).sum())
+    return [{**c, 'pixels': int((cls == c['id']).sum()),
+             'percent': round(100 * float((cls == c['id']).sum()) / total, 2),
+             'km2': round(float((cls == c['id']).sum()) * pixel_area_m2 / 1e6, 1)} for c in CLASSES]
+
+
 def index_rgba(array: np.ndarray, name: str) -> np.ndarray:
     rgba = matplotlib.colormaps[CMAPS[name]](np.clip((array + 1) / 2, 0, 1), bytes=True)
     rgba[..., 3] = np.isfinite(array) * 255
@@ -236,6 +274,10 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     layers={'RGB':stretch_rgb(scene['reflectance']),**{name:index_rgba(a,name) for name,a in indices.items()}}
     # Atlas (Kamila): dodatkowe warstwy mapy
     layers.update({name:stretch_bands(scene['reflectance'],bands) for name,bands in COMPOSITES.items()})
+    cls=classify(indices)
+    tr=scene['profile']['transform']
+    summary['classes']=class_stats(cls,abs(tr.a*tr.e))
+    layers['KLASY']=class_rgba(cls)
     for name,rgba in layers.items():
         p=raster_dir/f'{name}_display.tif'
         write_geotiff(p,rgba,scene['profile'],rgba=True)
@@ -247,7 +289,8 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     bounds=array_bounds(scene['profile']['height'],scene['profile']['width'],scene['profile']['transform'])
     w,s,e,n=transform_bounds(scene['profile']['crs'],'EPSG:4326',*bounds)
     config={'bounds':[[s,w],[n,e]],'minzoom':minzoom,'maxzoom':maxzoom,'date':summary['date'],
-            'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in indices}}
+            'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in indices},
+            'classes':[{k:c[k] for k in ('id','name','color','rule')} for c in CLASSES]}
     template=(Path(__file__).parent/'map_template.html').read_text(encoding='utf-8')
     (site/'index.html').write_text(template.replace('__MAP_CONFIG__',json.dumps(config)),encoding='utf-8')
     summary['export_seconds']=round(time.perf_counter()-start,2)
