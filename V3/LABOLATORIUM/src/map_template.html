@@ -12,6 +12,18 @@ aside{padding:20px;overflow:auto}
 aside h2{font-size:17px;margin:0 0 8px}
 aside section{margin-bottom:22px}
 @media(max-width:700px){main{display:flex;flex-direction:column;height:auto}#map{height:62vh;min-height:350px}}
+</style>
+<style>
+/* Kamila: wygląd wycieczki po atlasie */
+.tour-btn{background:#133e4a;color:#fff;border:0;border-radius:8px;padding:10px 16px;font:600 15px system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.tour-btn:hover{background:#1d5868}
+.tour-card{width:330px;max-width:calc(100vw - 40px);background:rgba(255,255,255,.97);border-radius:10px;padding:14px 16px;box-shadow:0 4px 20px rgba(0,0,0,.3);font:14px system-ui,sans-serif;color:#173541}
+.tour-card h3{margin:2px 0 6px;font-size:19px}
+.tour-bar{display:flex;height:12px;border-radius:4px;overflow:hidden;margin:8px 0 5px;background:#dde5e4}
+.tour-nav{display:flex;gap:8px;margin-top:12px}
+.tour-nav button{flex:1;padding:7px;border:1px solid #133e4a;border-radius:6px;background:#fff;color:#133e4a;cursor:pointer;font:600 14px system-ui,sans-serif}
+.tour-nav button.main{background:#133e4a;color:#fff}
+.tour-nav button:disabled{opacity:.35;cursor:default}
 </style></head><body>
 <header>
 <h1>Atlas środowiskowy Krakowa</h1>
@@ -162,7 +174,9 @@ document.querySelector('#classList').innerHTML=cfg.classes.map(c=>
 onLayerChange.push(name=>{document.querySelector('#classLegend').hidden=name!=='KLASY';});
 
 // Kamila: panel statystyk – wykres słupkowy udziału klas i tabela średnich wskaźników
+let statystykiObszaru=null;
 fetch('summary.json').then(r=>r.json()).then(s=>{
+  statystykiObszaru=s;
   const km2=s.classes.reduce((sum,c)=>sum+c.km2,0);
   const bars=s.classes.map(c=>
     '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;gap:6px">'+
@@ -294,6 +308,60 @@ document.querySelector('#radius').addEventListener('input',e=>{
   document.querySelector('#radiusValue').textContent=m>=1000?String(m/1000).replace('.',',')+' km':m+' m';
   analizuj();
 });
+
+// Kamila: wycieczka po atlasie – animowane przeloty między przystankami z opisem i statystykami
+const wycieczka=L.control({position:'topright'});
+let koloWycieczki=null, kontenerWycieczki;
+wycieczka.onAdd=()=>{
+  kontenerWycieczki=L.DomUtil.create('div');
+  L.DomEvent.disableClickPropagation(kontenerWycieczki);
+  L.DomEvent.disableScrollPropagation(kontenerWycieczki);
+  pokazPrzyciskWycieczki();
+  return kontenerWycieczki;
+};
+function pokazPrzyciskWycieczki(){
+  kontenerWycieczki.innerHTML='<button class="tour-btn">▶ Wycieczka po atlasie</button>';
+  kontenerWycieczki.querySelector('button').onclick=()=>przystanek(0);
+}
+function zakonczWycieczke(){
+  if(koloWycieczki)map.removeLayer(koloWycieczki);
+  pokazPrzyciskWycieczki();
+}
+function pasekKlas(udzial){       // poziomy pasek udziałów klas + podpisy
+  return '<div class="tour-bar">'+cfg.classes.map(c=>'<span title="'+c.name+'" style="width:'+udzial[c.id]+'%;background:'+c.color+'"></span>').join('')+'</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:3px 10px;font-size:12px">'+cfg.classes.map(c=>
+      '<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+c.color+'"></span> '+
+      c.name.split(' (')[0]+' <b>'+Math.round(udzial[c.id])+'%</b></span>').join('')+'</div>';
+}
+function przystanek(i){
+  const lista=cfg.tour, ostatni=lista.length;     // krok o numerze lista.length to podsumowanie
+  if(koloWycieczki)map.removeLayer(koloWycieczki);
+  let tresc;
+  if(i<ostatni){
+    const p=lista[i];
+    wybor.value=p.layer; showLayer(p.layer);
+    map.flyTo([p.lat,p.lon],p.zoom,{duration:2.2});
+    koloWycieczki=L.circle([p.lat,p.lon],{radius:p.radius,color:'#ffffff',weight:3,dashArray:'7 6',fill:false,interactive:false}).addTo(map);
+    tresc='<div style="font-size:12px;color:#5b7480">Przystanek '+(i+1)+' z '+ostatni+' • warstwa: '+wybor.options[wybor.selectedIndex].text+'</div>'+
+      '<h3>'+p.title+'</h3><p style="margin:0">'+p.text+'</p>'+
+      '<div style="margin-top:8px;font-size:13px">W kole 500 m: NDVI <b>'+p.ndvi.toFixed(2)+'</b> • NDBI <b>'+p.ndbi.toFixed(2)+'</b> • MNDWI <b>'+p.mndwi.toFixed(2)+'</b></div>'+
+      pasekKlas(p.share);
+  }else{
+    wybor.value='KLASY'; showLayer('KLASY');
+    map.flyToBounds(cfg.bounds,{duration:2.2});
+    const udzial={}; if(statystykiObszaru)statystykiObszaru.classes.forEach(c=>udzial[c.id]=c.percent);
+    tresc='<div style="font-size:12px;color:#5b7480">Podsumowanie</div><h3>Cały obszar</h3>'+
+      '<p style="margin:0">Okolice Krakowa są w większości zielone. Zabudowa skupia się w centrum, w Nowej Hucie i wzdłuż dróg, a część „zabudowy” to w rzeczywistości pola po żniwach.</p>'+
+      (statystykiObszaru?pasekKlas(udzial):'');
+  }
+  kontenerWycieczki.innerHTML='<div class="tour-card">'+tresc+'<div class="tour-nav">'+
+    '<button data-krok="'+(i-1)+'"'+(i===0?' disabled':'')+'>◀ Wstecz</button>'+
+    (i<ostatni?'<button class="main" data-krok="'+(i+1)+'">Dalej ▶</button>':'')+
+    '<button data-krok="koniec">✕ Zakończ</button></div></div>';
+  kontenerWycieczki.querySelectorAll('button').forEach(b=>b.onclick=()=>
+    b.dataset.krok==='koniec'?zakonczWycieczke():przystanek(Number(b.dataset.krok)));
+}
+wycieczka.addTo(map);
  
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora, suwaka porównania i kliknięcia w mapę
  
