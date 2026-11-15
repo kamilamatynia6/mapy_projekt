@@ -179,6 +179,34 @@ def green_deficit(indices: dict) -> np.ndarray:
     return (indices['NDBI'] - indices['NDVI']).astype('float32')
 
 
+def grid_geojson(cls: np.ndarray, indices: dict, profile: dict, size_m=1000, min_valid=0.3) -> dict:
+    """Atlas (Kamila): siatka kwadratów ok. 1 km. Każdy kwadrat dostaje udział klas
+    i średnie wskaźników. Kwadraty z mniej niż 30% ważnych pikseli są pomijane."""
+    t = profile['transform']
+    step = int(round(size_m / abs(t.a)))            # 33 piksele po 30 m = 990 m
+    height, width = cls.shape
+    features = []
+    for r0 in range(0, height, step):
+        for c0 in range(0, width, step):
+            block = cls[r0:r0+step, c0:c0+step]
+            n = int((block > 0).sum())
+            if n < min_valid * step * step:
+                continue
+            share = {key: round(100 * float((block == k).sum()) / n, 1)
+                     for k, key in [(1, 'woda'), (2, 'gesta'), (3, 'niska'), (4, 'zabudowa')]}
+            means = {name.lower(): round(float(np.nanmean(indices[name][r0:r0+step, c0:c0+step])), 3)
+                     for name in ('NDVI', 'NDBI', 'MNDWI')}
+            x0, y0 = t * (c0, r0)
+            x1, y1 = t * (min(c0 + step, width), min(r0 + step, height))
+            ring = transform_geom(profile['crs'], 'EPSG:4326', {'type': 'Polygon',
+                                  'coordinates': [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]})
+            features.append({'type': 'Feature',
+                             'geometry': {'type': 'Polygon', 'coordinates': [[[round(x, 5), round(y, 5)] for x, y in ring['coordinates'][0]]]},
+                             'properties': {**share, 'zielen': round(share['gesta'] + share['niska'], 1),
+                                            **means, 'km2': round(n * abs(t.a * t.e) / 1e6, 2)}})
+    return {'type': 'FeatureCollection', 'features': features}
+
+
 def index_rgba(array: np.ndarray, name: str) -> np.ndarray:
     rgba = matplotlib.colormaps[CMAPS[name]](np.clip((array + 1) / 2, 0, 1), bytes=True)
     rgba[..., 3] = np.isfinite(array) * 255
@@ -291,6 +319,9 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
                         'share_above_0':round(100*float((finite>0).mean()),2)}
     write_geotiff(raster_dir/'DEFICYT.tif',deficit,scene['profile'])
     layers['DEFICYT']=index_rgba(deficit,'DEFICYT')
+    grid=grid_geojson(cls,indices,scene['profile'])
+    (site/'siatka.geojson').write_text(json.dumps(grid,separators=(',',':')),encoding='utf-8')
+    summary['grid_cells']=len(grid['features'])
     for name,rgba in layers.items():
         p=raster_dir/f'{name}_display.tif'
         write_geotiff(p,rgba,scene['profile'],rgba=True)
