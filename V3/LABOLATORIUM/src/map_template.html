@@ -28,6 +28,11 @@ aside section{margin-bottom:22px}
 <option value="NDBI">NDBI – zabudowa</option>
 <option value="MNDWI">MNDWI – woda</option>
 <option value="RGB">RGB – naturalne barwy</option>
+<!-- Kamila: warstwy atlasu -->
+<option value="KLASY">Pokrycie terenu – klasy</option>
+<option value="DEFICYT">Deficyt zieleni</option>
+<option value="PODCZERWIEN">Podczerwień (B5/B4/B3)</option>
+<option value="MIASTO">Kompozycja miejska (B6/B5/B4)</option>
 </select>
 <p id="explain" style="font-size:14px"></p>
 </section>
@@ -47,7 +52,13 @@ aside section{margin-bottom:22px}
 </section>
  
 <!-- ------------------------------------------------------------ -->
- 
+
+<!-- Kamila: legenda klas pokrycia terenu (widoczna dla warstwy KLASY) -->
+<section id="classLegend" hidden>
+<h2>Klasy pokrycia terenu</h2>
+<div id="classList" style="font-size:14px"></div>
+</section>
+
 <!-- ------------------------------------------------------------ -->
  
 <!-- TODO Rafał: panel statystyk z summary.json i przycisk "Cały obszar" -->
@@ -103,8 +114,22 @@ document.querySelector('#opacity').addEventListener('input',e=>{
   document.querySelector('#opacityValue').textContent=Math.round(currentOpacity*100)+'%';
 });
 L.control.scale({imperial:false}).addTo(map);
- 
+
 // ------------------------------------------------------------
+
+// Kamila: opisy nowych warstw atlasu
+Object.assign(opisy,{
+  KLASY:'Klasyfikacja progowa: woda (MNDWI > 0), gęsta roślinność (NDVI ≥ 0.7), roślinność niska (0.4 ≤ NDVI < 0.7), zabudowa i odkryty grunt (NDVI < 0.4). Uproszczenie bez weryfikacji terenowej.',
+  DEFICYT:'Deficyt zieleni = NDBI − NDVI. Ciemnozielone: dużo roślinności. Jasne, żółtawe: zabudowa i mało zieleni – miejsca, gdzie przydałoby się więcej drzew (np. centrum i Nowa Huta).',
+  PODCZERWIEN:'Fałszywe barwy B5/B4/B3: zdrowa roślinność jest czerwona, zabudowa szaroniebieska, woda ciemna.',
+  MIASTO:'Fałszywe barwy B6/B5/B4: roślinność jest zielona, zabudowa i odkryty grunt różowofioletowe, woda ciemna.'
+});
+
+// Kamila: legenda klas (kolorowe kwadraty z nazwami, tylko dla warstwy KLASY)
+document.querySelector('#classList').innerHTML=cfg.classes.map(c=>
+  '<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'+
+  '<span style="width:16px;height:16px;border-radius:3px;flex:none;background:'+c.color+'"></span>'+c.name+'</div>').join('');
+onLayerChange.push(name=>{document.querySelector('#classLegend').hidden=name!=='KLASY';});
  
 // TODO Rafał: wczytanie summary.json, panel statystyk, przycisk "Cały obszar"
  
