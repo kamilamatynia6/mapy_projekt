@@ -14,7 +14,7 @@ import rasterio
 from rasterio.enums import ColorInterp, Resampling
 from rasterio.features import geometry_mask
 from rasterio.transform import from_bounds, array_bounds
-from rasterio.warp import transform_geom, transform_bounds, reproject
+from rasterio.warp import transform, transform_geom, transform_bounds, reproject
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -207,6 +207,42 @@ def grid_geojson(cls: np.ndarray, indices: dict, profile: dict, size_m=1000, min
     return {'type': 'FeatureCollection', 'features': features}
 
 
+# Atlas (Kamila): przystanki wycieczki po atlasie. Statystyki liczymy z danych (koło 500 m),
+# żeby opisy na stronie opierały się na wynikach, a nie na zgadywaniu.
+TOUR = [
+    {'title': 'Lasek Wolski', 'lat': 50.055, 'lon': 19.855, 'zoom': 13, 'layer': 'NDVI',
+     'text': 'Największy kompleks leśny w granicach Krakowa. Gęsta, zdrowa roślinność daje tu najwyższe NDVI na całej mapie.'},
+    {'title': 'Stare Miasto', 'lat': 50.0617, 'lon': 19.937, 'zoom': 13, 'layer': 'DEFICYT',
+     'text': 'Zwarta zabudowa centrum: niskie NDVI i najwyższy deficyt zieleni. Planty i bulwary to tylko niewielki udział koła.'},
+    {'title': 'Wisła i Zalew Bagry', 'lat': 50.0332, 'lon': 19.9883, 'zoom': 13, 'layer': 'MNDWI',
+     'text': 'Woda ma dodatnie MNDWI, więc rzeka i zalew wyraźnie odcinają się od lądu. Wąskie odcinki są mniej pewne, bo piksel 30 m obejmuje też brzeg.'},
+    {'title': 'Kombinat w Nowej Hucie', 'lat': 50.080, 'lon': 20.105, 'zoom': 13, 'layer': 'MIASTO',
+     'text': 'Hale i place przemysłowe w kompozycji B6/B5/B4 są różowofioletowe. Pomiędzy nimi rośnie zieleń, dlatego okolica to mieszanina klas.'},
+    {'title': 'Pola po żniwach – uwaga na błąd', 'lat': 50.25, 'lon': 20.12, 'zoom': 12, 'layer': 'KLASY',
+     'text': 'Czerwone plamy to nie miasto, tylko pola po żniwach. Odkryta gleba ma niskie NDVI i NDBI podobne do zabudowy – to ograniczenie klasyfikacji progowej.'},
+]
+
+
+def tour_points(cls: np.ndarray, indices: dict, profile: dict, radius_m=500) -> list:
+    t = profile['transform']
+    rows, cols = np.indices(cls.shape)
+    result = []
+    for stop in TOUR:
+        xs, ys = transform('EPSG:4326', profile['crs'], [stop['lon']], [stop['lat']])
+        col, row = ~t * (xs[0], ys[0])
+        r = radius_m / abs(t.a)
+        r0, r1 = int(max(row - r, 0)), int(min(row + r + 1, cls.shape[0]))
+        c0, c1 = int(max(col - r, 0)), int(min(col + r + 1, cls.shape[1]))
+        inside = (rows[r0:r1, c0:c1] + .5 - row) ** 2 + (cols[r0:r1, c0:c1] + .5 - col) ** 2 <= r * r
+        block = cls[r0:r1, c0:c1][inside]
+        n = max(int((block > 0).sum()), 1)
+        result.append({**stop, 'radius': radius_m,
+                       'share': {str(c['id']): round(100 * float((block == c['id']).sum()) / n, 1) for c in CLASSES},
+                       **{name.lower(): round(float(np.nanmean(indices[name][r0:r1, c0:c1][inside])), 2)
+                          for name in ('NDVI', 'NDBI', 'MNDWI')}})
+    return result
+
+
 def analysis_png(cls: np.ndarray, indices: dict, profile: dict, path: Path, step_m=60) -> dict:
     """Atlas (Kamila): raster danych do analizy w przeglądarce, w siatce EPSG:4326
     (piksel ok. 60 m), żeby strona mogła przeliczać współrzędne na piksel bez bibliotek.
@@ -364,7 +400,7 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     config={'bounds':[[s,w],[n,e]],'minzoom':minzoom,'maxzoom':maxzoom,'date':summary['date'],
             'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in [*indices,'DEFICYT']},
             'classes':[{k:c[k] for k in ('id','name','color','rule')} for c in CLASSES],
-            'probe':probe}
+            'probe':probe,'tour':tour_points(cls,indices,scene['profile'])}
     template=(Path(__file__).parent/'map_template.html').read_text(encoding='utf-8')
     (site/'index.html').write_text(template.replace('__MAP_CONFIG__',json.dumps(config)),encoding='utf-8')
     summary['export_seconds']=round(time.perf_counter()-start,2)
