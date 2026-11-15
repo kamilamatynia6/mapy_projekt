@@ -80,6 +80,15 @@ aside section{margin-bottom:22px}
 <p style="font-size:13px;color:#5b7480;margin:6px 0 0">Najedź myszą na kwadrat, żeby zobaczyć jego statystyki.</p>
 </section>
 
+<!-- Kamila: analiza okolicy – statystyki w kole o wybranym promieniu -->
+<section id="analiza">
+<h2>Analiza okolicy</h2>
+<button id="analyzeBtn" style="width:100%;padding:8px;font-size:15px;border:0;border-radius:6px;background:#133e4a;color:#fff;cursor:pointer">📍 Wybierz miejsce na mapie</button>
+<label for="radius" style="display:block;margin-top:8px;font-size:14px">Promień: <b id="radiusValue">500 m</b></label>
+<input id="radius" type="range" min="250" max="3000" step="250" value="500" style="width:100%">
+<div id="analyzeResult" style="font-size:14px;color:#5b7480">Kliknij przycisk, a potem dowolne miejsce na mapie.</div>
+</section>
+
 <!-- ------------------------------------------------------------ -->
  
 <!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, suwak porównania dwóch warstw, wartości wskaźników po kliknięciu w mapę -->
@@ -210,6 +219,81 @@ document.querySelector('#gridOn').addEventListener('change',e=>{
 });
 gridMetric.addEventListener('change',odswiezSiatke);
 odswiezSiatke();
+
+// Kamila: analiza okolicy – przeglądarka liczy udział klas w kole z rastra analiza.png
+// (kanał R = klasa, G = NDVI zakodowane jako (NDVI + 1) * 127.5)
+let trybAnalizy=false, kolo=null, srodek=null, daneAnalizy=null;
+function wczytajDaneAnalizy(){
+  if(daneAnalizy)return Promise.resolve(daneAnalizy);
+  return new Promise((ok,blad)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+      const ctx=c.getContext('2d'); ctx.drawImage(img,0,0);
+      daneAnalizy=ctx.getImageData(0,0,img.width,img.height).data; ok(daneAnalizy);
+    };
+    img.onerror=blad; img.src=cfg.probe.url;
+  });
+}
+function statystykiKola(punkt,promien){
+  const p=cfg.probe, [[s,w],[n,e]]=p.bounds, dx=(e-w)/p.width, dy=(n-s)/p.height;
+  const mLat=110540, mLng=111320*Math.cos(punkt.lat*Math.PI/180);   // metry na stopień
+  const x0=Math.max(0,Math.floor((punkt.lng-promien/mLng-w)/dx)), x1=Math.min(p.width-1,Math.ceil((punkt.lng+promien/mLng-w)/dx));
+  const y0=Math.max(0,Math.floor((n-punkt.lat-promien/mLat)/dy)), y1=Math.min(p.height-1,Math.ceil((n-punkt.lat+promien/mLat)/dy));
+  const licz=[0,0,0,0,0]; let sumaNdvi=0, wKole=0;
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    const lng=w+(x+0.5)*dx, lat=n-(y+0.5)*dy;
+    if(Math.hypot((lng-punkt.lng)*mLng,(lat-punkt.lat)*mLat)>promien)continue;   // poza kołem
+    wKole++;
+    const i=(y*p.width+x)*4, k=daneAnalizy[i];
+    if(!k)continue;                                                               // brak danych
+    licz[k]++; sumaNdvi+=daneAnalizy[i+1]/127.5-1;
+  }
+  const razem=licz.slice(1).reduce((a,b)=>a+b,0);
+  return {licz, razem, pokrycie:wKole?razem/wKole:0, ndvi:razem?sumaNdvi/razem:NaN};
+}
+function wykresKolowy(udzialy){   // wykres pierścieniowy SVG: obwód koła r=15.915 to 100 jednostek
+  let suma=0;
+  return '<svg viewBox="0 0 42 42" width="88" height="88" style="flex:none">'+
+    '<circle cx="21" cy="21" r="15.915" fill="none" stroke="#dde5e4" stroke-width="7"/>'+
+    udzialy.map(u=>{const kawalek='<circle cx="21" cy="21" r="15.915" fill="none" stroke="'+u.color+'" stroke-width="7" '+
+      'stroke-dasharray="'+u.p+' '+(100-u.p)+'" stroke-dashoffset="'+(125-suma)+'"/>'; suma+=u.p; return kawalek;}).join('')+'</svg>';
+}
+function analizuj(){
+  if(!srodek)return;
+  const promien=Number(document.querySelector('#radius').value), wynik=document.querySelector('#analyzeResult');
+  if(kolo)map.removeLayer(kolo);
+  kolo=L.circle(srodek,{radius:promien,color:'#133e4a',weight:2,fillOpacity:0.08,dashArray:'6 4',interactive:false}).addTo(map);
+  wczytajDaneAnalizy().then(()=>{
+    const st=statystykiKola(srodek,promien);
+    if(!st.razem){wynik.textContent='W tym miejscu nie ma danych (poza granicą obszaru).';return;}
+    const udzialy=cfg.classes.map(c=>({...c,p:100*st.licz[c.id]/st.razem}));
+    wynik.style.color='#173541';
+    wynik.innerHTML='<div style="display:flex;gap:10px;align-items:center;margin-top:8px">'+wykresKolowy(udzialy)+'<div style="font-size:13px">'+
+      udzialy.map(u=>'<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:2px;flex:none;background:'+u.color+'"></span>'+
+        u.name.split(' (')[0]+': <b>'+u.p.toFixed(0)+'%</b></div>').join('')+'</div></div>'+
+      '<p style="margin:6px 0 0">Koło '+(Math.PI*promien*promien/1e6).toFixed(2).replace('.',',')+' km² • średnie NDVI <b>'+st.ndvi.toFixed(2)+'</b>'+
+      (st.pokrycie<0.95?' • dane dla '+Math.round(100*st.pokrycie)+'% koła':'')+'</p>';
+  }).catch(()=>{wynik.textContent='Analiza działa po otwarciu strony przez serwer HTTP.';});
+}
+const analyzeBtn=document.querySelector('#analyzeBtn');
+analyzeBtn.addEventListener('click',()=>{
+  trybAnalizy=!trybAnalizy;
+  map.getContainer().style.cursor=trybAnalizy?'crosshair':'';
+  analyzeBtn.textContent=trybAnalizy?'✕ Anuluj wybieranie':'📍 Wybierz miejsce na mapie';
+});
+map.on('click',e=>{
+  if(!trybAnalizy)return;
+  e.analiza=true;              // znacznik dla innych obsług kliknięcia: to kliknięcie należy do analizy
+  trybAnalizy=false; map.getContainer().style.cursor='';
+  analyzeBtn.textContent='📍 Wybierz inne miejsce';
+  srodek=e.latlng; analizuj();
+});
+document.querySelector('#radius').addEventListener('input',e=>{
+  const m=Number(e.target.value);
+  document.querySelector('#radiusValue').textContent=m>=1000?String(m/1000).replace('.',',')+' km':m+' m';
+  analizuj();
+});
  
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora, suwaka porównania i kliknięcia w mapę
  
