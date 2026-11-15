@@ -65,6 +65,21 @@ aside section{margin-bottom:22px}
 <div id="statsBody" style="font-size:14px">Wczytywanie…</div>
 </section>
 
+<!-- Kamila: siatka 1 km – kwadraty pokolorowane wybraną miarą -->
+<section>
+<h2>Siatka 1 km</h2>
+<label style="display:flex;gap:8px;align-items:center;font-size:15px"><input type="checkbox" id="gridOn"> Pokaż kwadraty 1 × 1 km</label>
+<select id="gridMetric" style="width:100%;padding:5px;margin-top:6px;font-size:14px">
+<option value="zielen">Zieleń razem [%]</option>
+<option value="zabudowa">Zabudowa i odkryty grunt [%]</option>
+<option value="woda">Woda [%]</option>
+<option value="ndvi">Średnie NDVI</option>
+</select>
+<div id="gridRamp" style="height:12px;border-radius:3px;margin-top:8px;border:1px solid #9bb"></div>
+<div id="gridTicks" style="display:flex;justify-content:space-between;font-size:12px"></div>
+<p style="font-size:13px;color:#5b7480;margin:6px 0 0">Najedź myszą na kwadrat, żeby zobaczyć jego statystyki.</p>
+</section>
+
 <!-- ------------------------------------------------------------ -->
  
 <!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, suwak porównania dwóch warstw, wartości wskaźników po kliknięciu w mapę -->
@@ -154,6 +169,47 @@ fetch('summary.json').then(r=>r.json()).then(s=>{
     '<table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:13px">'+
     '<tr><th style="text-align:left">Wskaźnik</th><th style="text-align:right">średnia</th><th style="text-align:right">mediana</th></tr>'+rows+'</table>';
 }).catch(()=>{document.querySelector('#statsBody').textContent='Statystyki widać po otwarciu strony przez serwer HTTP.';});
+
+// Kamila: siatka 1 km – miary, skala kolorów i podpowiedź po najechaniu myszą
+const miarySiatki={
+  zielen:{min:40,max:100,kolory:['#fff7bc','#a1d99b','#238b45','#00441b']},
+  zabudowa:{min:0,max:60,kolory:['#fff5eb','#fdae6b','#e6550d','#7f2704']},
+  woda:{min:0,max:20,kolory:['#f7fbff','#9ecae1','#3182bd','#08306b']},
+  ndvi:{min:0.2,max:0.85,kolory:['#d73027','#fee08b','#91cf60','#1a9850']}
+};
+function kolorSkali(v,m){            // płynne przejście między kolorami skali
+  const t=Math.max(0,Math.min(1,(v-m.min)/(m.max-m.min)))*(m.kolory.length-1);
+  const i=Math.min(Math.floor(t),m.kolory.length-2), f=t-i;
+  const a=m.kolory[i].match(/\w\w/g).map(h=>parseInt(h,16)), b=m.kolory[i+1].match(/\w\w/g).map(h=>parseInt(h,16));
+  return 'rgb('+a.map((x,j)=>Math.round(x+(b[j]-x)*f)).join(',')+')';
+}
+function opisKwadratu(p){
+  return '<b>Kwadrat ok. 1 km²</b><br>Zieleń: <b>'+p.zielen+'%</b> (gęsta '+p.gesta+'%, niska '+p.niska+'%)'+
+    '<br>Zabudowa i grunt: <b>'+p.zabudowa+'%</b><br>Woda: <b>'+p.woda+'%</b>'+
+    '<br>NDVI '+p.ndvi.toFixed(2)+' • NDBI '+p.ndbi.toFixed(2)+' • MNDWI '+p.mndwi.toFixed(2);
+}
+let siatka=null;
+const gridMetric=document.querySelector('#gridMetric');
+function odswiezSiatke(){
+  const m=miarySiatki[gridMetric.value];
+  document.querySelector('#gridRamp').style.background='linear-gradient(to right,'+m.kolory.join(',')+')';
+  document.querySelector('#gridTicks').innerHTML='<span>'+(m.min>0?'≤ ':'')+m.min+'</span><span>'+m.max+(m.max>1&&m.max<100?'+':'')+'</span>';
+  if(siatka)siatka.setStyle(f=>({color:'#ffffff',weight:0.4,fillOpacity:0.8,fillColor:kolorSkali(f.properties[gridMetric.value],m)}));
+}
+document.querySelector('#gridOn').addEventListener('change',e=>{
+  if(!e.target.checked){if(siatka)map.removeLayer(siatka);return;}
+  if(siatka){siatka.addTo(map);return;}
+  fetch('siatka.geojson').then(r=>r.json()).then(g=>{
+    siatka=L.geoJSON(g,{onEachFeature:(f,l)=>{
+      l.bindTooltip(()=>opisKwadratu(f.properties),{sticky:true});
+      l.on('mouseover',()=>l.setStyle({weight:2.5,color:'#133e4a'}));
+      l.on('mouseout',()=>l.setStyle({weight:0.4,color:'#ffffff'}));
+    }}).addTo(map);
+    odswiezSiatke();
+  });
+});
+gridMetric.addEventListener('change',odswiezSiatke);
+odswiezSiatke();
  
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora, suwaka porównania i kliknięcia w mapę
  
