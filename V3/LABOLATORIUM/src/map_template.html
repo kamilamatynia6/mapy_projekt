@@ -67,7 +67,7 @@ aside section{margin-bottom:22px}
 
 <!-- ------------------------------------------------------------ -->
  
-<!-- TODO Rafał: panel statystyk z summary.json i przycisk "Cały obszar" -->
+<!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, suwak porównania dwóch warstw, wartości wskaźników po kliknięciu w mapę -->
  
 <p id="state">Wczytywanie mapy…</p>
 </aside></main>
@@ -155,7 +155,7 @@ fetch('summary.json').then(r=>r.json()).then(s=>{
     '<tr><th style="text-align:left">Wskaźnik</th><th style="text-align:right">średnia</th><th style="text-align:right">mediana</th></tr>'+rows+'</table>';
 }).catch(()=>{document.querySelector('#statsBody').textContent='Statystyki widać po otwarciu strony przez serwer HTTP.';});
  
-// TODO Rafał: wczytanie summary.json, panel statystyk, przycisk "Cały obszar"
+// TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora, suwaka porównania i kliknięcia w mapę
  
 showLayer(currentLayer);
 </script></body></html>
