@@ -14,7 +14,7 @@ import rasterio
 from rasterio.enums import ColorInterp, Resampling
 from rasterio.features import geometry_mask
 from rasterio.transform import from_bounds, array_bounds
-from rasterio.warp import transform, transform_geom, transform_bounds, reproject
+from rasterio.warp import transform_geom, transform_bounds, reproject
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -22,7 +22,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 INDEX_BANDS = {'NDVI': (5, 4), 'NDBI': (6, 5), 'MNDWI': (3, 6)}
-CMAPS = {'NDVI': 'RdYlGn', 'NDBI': 'PuOr_r', 'MNDWI': 'BrBG', 'DEFICYT': 'RdYlGn_r'}
+CMAPS = {'NDVI': 'RdYlGn', 'NDBI': 'PuOr_r', 'MNDWI': 'BrBG'}
 NS = {'e': 'http://espa.cr.usgs.gov/v2'}
 
 
@@ -112,163 +112,14 @@ def calculate_indices(reflectance: dict) -> dict:
 
 def stretch_rgb(reflectance: dict) -> np.ndarray:
     """RGB 4/3/2: osobne rozciągnięcie 2-98 percentyl wyłącznie do prezentacji."""
-    return stretch_bands(reflectance, (4, 3, 2))
-
-
-# Atlas (Kamila): kompozycje w fałszywych barwach – te same kanały w innej kolejności
-COMPOSITES = {
-    'PODCZERWIEN': (5, 4, 3),  # roślinność świeci na czerwono
-    'MIASTO': (6, 5, 4),       # zabudowa i odkryty grunt odróżniają się od zieleni
-}
-
-
-def stretch_bands(reflectance: dict, bands: tuple) -> np.ndarray:
-    """Dowolna kompozycja 3 kanałów z rozciągnięciem 2-98 percentyl (tylko do prezentacji)."""
     channels = []
-    for b in bands:
+    for b in (4, 3, 2):
         a = reflectance[b]
         lo, hi = np.nanpercentile(a, (2, 98))
         scaled = np.clip((a - lo) / max(hi - lo, 1e-6), 0, 1)
         channels.append((np.nan_to_num(scaled) * 255).astype('uint8'))
     alpha = (np.isfinite(reflectance[4]) * 255).astype('uint8')
     return np.dstack([*channels, alpha])
-
-
-# Atlas (Kamila): klasy pokrycia terenu wyznaczane progami wskaźników.
-# Kolejność ma znaczenie: woda ma pierwszeństwo, potem gęsta i niska roślinność.
-CLASSES = [
-    {'id': 1, 'name': 'Woda', 'color': '#2c7fb8', 'rule': 'MNDWI > 0'},
-    {'id': 2, 'name': 'Gęsta roślinność (lasy, zarośla, bujne uprawy)', 'color': '#1a7f37', 'rule': 'NDVI ≥ 0.7'},
-    {'id': 3, 'name': 'Roślinność niska (łąki, pola, parki)', 'color': '#a6d96a', 'rule': '0.4 ≤ NDVI < 0.7'},
-    {'id': 4, 'name': 'Zabudowa i odkryty grunt', 'color': '#c0504d', 'rule': 'NDVI < 0.4'},
-]
-
-
-def classify(indices: dict) -> np.ndarray:
-    """Zwraca numer klasy dla każdego piksela; 0 = brak ważnych danych."""
-    ndvi, mndwi = indices['NDVI'], indices['MNDWI']
-    ok = np.isfinite(ndvi) & np.isfinite(indices['NDBI']) & np.isfinite(mndwi)
-    cls = np.zeros(ndvi.shape, dtype='uint8')
-    cls[ok] = 4
-    cls[ok & (ndvi >= 0.4)] = 3
-    cls[ok & (ndvi >= 0.7)] = 2
-    cls[ok & (mndwi > 0)] = 1
-    return cls
-
-
-def class_rgba(cls: np.ndarray) -> np.ndarray:
-    rgba = np.zeros((*cls.shape, 4), dtype='uint8')
-    for c in CLASSES:
-        rgb = [int(c['color'][i:i+2], 16) for i in (1, 3, 5)]
-        rgba[cls == c['id']] = [*rgb, 255]
-    return rgba
-
-
-def class_stats(cls: np.ndarray, pixel_area_m2: float) -> list:
-    """Udział (%) i powierzchnia (km²) każdej klasy."""
-    total = int((cls > 0).sum())
-    return [{**c, 'pixels': int((cls == c['id']).sum()),
-             'percent': round(100 * float((cls == c['id']).sum()) / total, 2),
-             'km2': round(float((cls == c['id']).sum()) * pixel_area_m2 / 1e6, 1)} for c in CLASSES]
-
-
-def green_deficit(indices: dict) -> np.ndarray:
-    """Atlas (Kamila): deficyt zieleni = NDBI − NDVI.
-    Dużo zabudowy i mało roślinności daje wartości bliskie 0 lub dodatnie,
-    las daje wartości bliskie −1. Wskaźnik pomocniczy, bez kalibracji terenowej."""
-    return (indices['NDBI'] - indices['NDVI']).astype('float32')
-
-
-def grid_geojson(cls: np.ndarray, indices: dict, profile: dict, size_m=1000, min_valid=0.3) -> dict:
-    """Atlas (Kamila): siatka kwadratów ok. 1 km. Każdy kwadrat dostaje udział klas
-    i średnie wskaźników. Kwadraty z mniej niż 30% ważnych pikseli są pomijane."""
-    t = profile['transform']
-    step = int(round(size_m / abs(t.a)))            # 33 piksele po 30 m = 990 m
-    height, width = cls.shape
-    features = []
-    for r0 in range(0, height, step):
-        for c0 in range(0, width, step):
-            block = cls[r0:r0+step, c0:c0+step]
-            n = int((block > 0).sum())
-            if n < min_valid * step * step:
-                continue
-            share = {key: round(100 * float((block == k).sum()) / n, 1)
-                     for k, key in [(1, 'woda'), (2, 'gesta'), (3, 'niska'), (4, 'zabudowa')]}
-            means = {name.lower(): round(float(np.nanmean(indices[name][r0:r0+step, c0:c0+step])), 3)
-                     for name in ('NDVI', 'NDBI', 'MNDWI')}
-            x0, y0 = t * (c0, r0)
-            x1, y1 = t * (min(c0 + step, width), min(r0 + step, height))
-            ring = transform_geom(profile['crs'], 'EPSG:4326', {'type': 'Polygon',
-                                  'coordinates': [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]})
-            features.append({'type': 'Feature',
-                             'geometry': {'type': 'Polygon', 'coordinates': [[[round(x, 5), round(y, 5)] for x, y in ring['coordinates'][0]]]},
-                             'properties': {**share, 'zielen': round(share['gesta'] + share['niska'], 1),
-                                            **means, 'km2': round(n * abs(t.a * t.e) / 1e6, 2)}})
-    return {'type': 'FeatureCollection', 'features': features}
-
-
-# Atlas (Kamila): przystanki wycieczki po atlasie. Statystyki liczymy z danych (koło 500 m),
-# żeby opisy na stronie opierały się na wynikach, a nie na zgadywaniu.
-TOUR = [
-    {'title': 'Lasek Wolski', 'lat': 50.055, 'lon': 19.855, 'zoom': 13, 'layer': 'NDVI',
-     'text': 'Największy kompleks leśny w granicach Krakowa. Gęsta, zdrowa roślinność daje tu najwyższe NDVI na całej mapie.'},
-    {'title': 'Stare Miasto', 'lat': 50.0617, 'lon': 19.937, 'zoom': 13, 'layer': 'DEFICYT',
-     'text': 'Zwarta zabudowa centrum: niskie NDVI i najwyższy deficyt zieleni. Planty i bulwary to tylko niewielki udział koła.'},
-    {'title': 'Wisła i Zalew Bagry', 'lat': 50.0332, 'lon': 19.9883, 'zoom': 13, 'layer': 'MNDWI',
-     'text': 'Woda ma dodatnie MNDWI, więc rzeka i zalew wyraźnie odcinają się od lądu. Wąskie odcinki są mniej pewne, bo piksel 30 m obejmuje też brzeg.'},
-    {'title': 'Kombinat w Nowej Hucie', 'lat': 50.080, 'lon': 20.105, 'zoom': 13, 'layer': 'MIASTO',
-     'text': 'Hale i place przemysłowe w kompozycji B6/B5/B4 są różowofioletowe. Pomiędzy nimi rośnie zieleń, dlatego okolica to mieszanina klas.'},
-    {'title': 'Pola po żniwach – uwaga na błąd', 'lat': 50.25, 'lon': 20.12, 'zoom': 12, 'layer': 'KLASY',
-     'text': 'Czerwone plamy to nie miasto, tylko pola po żniwach. Odkryta gleba ma niskie NDVI i NDBI podobne do zabudowy – to ograniczenie klasyfikacji progowej.'},
-]
-
-
-def tour_points(cls: np.ndarray, indices: dict, profile: dict, radius_m=500) -> list:
-    t = profile['transform']
-    rows, cols = np.indices(cls.shape)
-    result = []
-    for stop in TOUR:
-        xs, ys = transform('EPSG:4326', profile['crs'], [stop['lon']], [stop['lat']])
-        col, row = ~t * (xs[0], ys[0])
-        r = radius_m / abs(t.a)
-        r0, r1 = int(max(row - r, 0)), int(min(row + r + 1, cls.shape[0]))
-        c0, c1 = int(max(col - r, 0)), int(min(col + r + 1, cls.shape[1]))
-        inside = (rows[r0:r1, c0:c1] + .5 - row) ** 2 + (cols[r0:r1, c0:c1] + .5 - col) ** 2 <= r * r
-        block = cls[r0:r1, c0:c1][inside]
-        n = max(int((block > 0).sum()), 1)
-        result.append({**stop, 'radius': radius_m,
-                       'share': {str(c['id']): round(100 * float((block == c['id']).sum()) / n, 1) for c in CLASSES},
-                       **{name.lower(): round(float(np.nanmean(indices[name][r0:r1, c0:c1][inside])), 2)
-                          for name in ('NDVI', 'NDBI', 'MNDWI')}})
-    return result
-
-
-def analysis_png(cls: np.ndarray, indices: dict, profile: dict, path: Path, step_m=60) -> dict:
-    """Atlas (Kamila): raster danych do analizy w przeglądarce, w siatce EPSG:4326
-    (piksel ok. 60 m), żeby strona mogła przeliczać współrzędne na piksel bez bibliotek.
-    Kanały PNG: R = klasa (0 = brak danych), G = NDVI, B = MNDWI; wartość = (wskaźnik + 1) * 127.5."""
-    h, w = cls.shape
-    west, south, east, north = transform_bounds(profile['crs'], 'EPSG:4326', *array_bounds(h, w, profile['transform']))
-    lat0 = math.radians((south + north) / 2)
-    width = int(math.ceil((east - west) / (step_m / (111320 * math.cos(lat0)))))
-    height = int(math.ceil((north - south) / (step_m / 110540)))
-    dst_transform = from_bounds(west, south, east, north, width, height)
-
-    def warp(a, dtype, nodata):
-        out = np.full((height, width), nodata, dtype=dtype)
-        reproject(a.astype(dtype), out, src_transform=profile['transform'], src_crs=profile['crs'],
-                  dst_transform=dst_transform, dst_crs='EPSG:4326', resampling=Resampling.nearest,
-                  src_nodata=nodata, dst_nodata=nodata)
-        return out
-
-    def encode(a):
-        v = warp(a, 'float32', np.nan)
-        return np.where(np.isfinite(v), np.clip(np.round((v + 1) * 127.5), 0, 255), 0).astype('uint8')
-
-    k = warp(cls, 'uint8', 0)
-    rgba = np.dstack([k, encode(indices['NDVI']), encode(indices['MNDWI']), np.full_like(k, 255)])
-    Image.fromarray(rgba, 'RGBA').save(path, optimize=True)
-    return {'url': path.name, 'bounds': [[south, west], [north, east]], 'width': width, 'height': height}
 
 
 def index_rgba(array: np.ndarray, name: str) -> np.ndarray:
@@ -371,22 +222,6 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
             'outside_minus1_plus1':int((np.abs(finite)>1).sum())}
         write_geotiff(raster_dir/f'{name}.tif',a,scene['profile'])
     layers={'RGB':stretch_rgb(scene['reflectance']),**{name:index_rgba(a,name) for name,a in indices.items()}}
-    # Atlas (Kamila): dodatkowe warstwy mapy
-    layers.update({name:stretch_bands(scene['reflectance'],bands) for name,bands in COMPOSITES.items()})
-    cls=classify(indices)
-    tr=scene['profile']['transform']
-    summary['classes']=class_stats(cls,abs(tr.a*tr.e))
-    layers['KLASY']=class_rgba(cls)
-    deficit=green_deficit(indices)
-    finite=deficit[np.isfinite(deficit)]
-    summary['deficit']={'mean':float(finite.mean()),'median':float(np.median(finite)),
-                        'share_above_0':round(100*float((finite>0).mean()),2)}
-    write_geotiff(raster_dir/'DEFICYT.tif',deficit,scene['profile'])
-    layers['DEFICYT']=index_rgba(deficit,'DEFICYT')
-    grid=grid_geojson(cls,indices,scene['profile'])
-    (site/'siatka.geojson').write_text(json.dumps(grid,separators=(',',':')),encoding='utf-8')
-    summary['grid_cells']=len(grid['features'])
-    probe=analysis_png(cls,indices,scene['profile'],site/'analiza.png')
     for name,rgba in layers.items():
         p=raster_dir/f'{name}_display.tif'
         write_geotiff(p,rgba,scene['profile'],rgba=True)
@@ -398,9 +233,7 @@ def export_results(scene: dict, indices: dict, output_dir: Path = ROOT/'outputs'
     bounds=array_bounds(scene['profile']['height'],scene['profile']['width'],scene['profile']['transform'])
     w,s,e,n=transform_bounds(scene['profile']['crs'],'EPSG:4326',*bounds)
     config={'bounds':[[s,w],[n,e]],'minzoom':minzoom,'maxzoom':maxzoom,'date':summary['date'],
-            'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in [*indices,'DEFICYT']},
-            'classes':[{k:c[k] for k in ('id','name','color','rule')} for c in CLASSES],
-            'probe':probe,'tour':tour_points(cls,indices,scene['profile'])}
+            'ramps':{name:['#'+''.join(f'{v:02x}' for v in matplotlib.colormaps[CMAPS[name]](float(t),bytes=True)[:3]) for t in np.linspace(0,1,9)] for name in indices}}
     template=(Path(__file__).parent/'map_template.html').read_text(encoding='utf-8')
     (site/'index.html').write_text(template.replace('__MAP_CONFIG__',json.dumps(config)),encoding='utf-8')
     summary['export_seconds']=round(time.perf_counter()-start,2)
