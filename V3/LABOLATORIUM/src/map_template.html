@@ -55,6 +55,24 @@ select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;bac
 .tryby label{flex:1;text-align:center;border:1px solid #b9c9c7;border-radius:8px;padding:7px;cursor:pointer;font-weight:600;font-size:14px;background:#fff}
 .tryby label:has(input:checked){background:var(--granat);color:#fff;border-color:var(--granat)}
 .tryby input{display:none}
+/* Kamila: karta problemu na mapie i lista problemów */
+.historia{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);width:min(580px,calc(100% - 40px));z-index:1000;background:rgba(255,255,255,.97);border-radius:16px;box-shadow:var(--cien);padding:16px 18px;transition:left .3s}
+body.panel-otwarty .historia{left:calc(50% - 195px)}
+.historia .nr{font:600 12px system-ui,sans-serif;color:var(--akcent);text-transform:uppercase;letter-spacing:.6px}
+.historia h3{margin:3px 0 6px;font-size:20px;color:var(--tekst)}
+.historia p{margin:0;font-size:14px}
+.fakty{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 2px}
+.fakty span{background:#eef4f3;border-radius:10px;padding:6px 10px;font-size:13px}
+.fakty b{display:block;font-size:17px;color:var(--granat)}
+.nawigacja{display:flex;gap:8px;margin-top:12px}
+.nawigacja button{flex:1;padding:8px;border:1px solid var(--granat);border-radius:8px;background:#fff;color:var(--granat);font:600 14px system-ui,sans-serif;cursor:pointer}
+.nawigacja button.glowny{background:var(--granat);color:#fff}
+.nawigacja button:disabled{opacity:.35;cursor:default}
+.problem{display:flex;gap:10px;align-items:flex-start;background:#fff;border:1px solid var(--linia);border-radius:12px;padding:10px;margin:8px 0;cursor:pointer}
+.problem:hover,.problem.on{border-color:var(--akcent);box-shadow:0 0 0 2px rgba(228,87,46,.2)}
+.problem .num{flex:none;width:28px;height:28px;border-radius:50%;background:var(--akcent);color:#fff;display:grid;place-items:center;font-weight:700}
+.problem b{display:block}
+.problem small{color:var(--szary)}
 @media(max-width:700px){h1{font-size:16px}header p{display:none}.legenda{width:200px}body.panel-otwarty .narzedzia{right:14px;opacity:0;pointer-events:none}}
 </style></head><body>
 <header>
@@ -74,10 +92,14 @@ select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;bac
 <div class="narzedzia" id="narzedzia">
 <button data-otworz="warstwy">🗺<span>Warstwy</span></button>
 <button data-otworz="porownaj">⇆<span>Porównaj</span></button>
+<button data-otworz="problemy">⚠<span>Problemy regionu</span></button>
 </div>
 
 <!-- Kamila: pionowa linia suwaka porównania -->
 <div id="suwak" hidden><div class="uchwyt">⇆</div><span class="etykieta lewa"></span><span class="etykieta prawa"></span></div>
+
+<!-- Kamila: karta aktualnego problemu na mapie -->
+<div class="historia" id="historia" hidden></div>
 
 <!-- Amelia: legenda (teraz jako karta na mapie, zawsze widoczna) -->
 <div class="legenda" id="legendCard">
@@ -96,6 +118,7 @@ select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;bac
 <nav class="zakladki" id="zakladki">
 <button data-zakladka="warstwy">🗺 Warstwy</button>
 <button data-zakladka="porownaj">⇆ Porównaj</button>
+<button data-zakladka="problemy">⚠ Problemy</button>
 </nav>
 <div class="tresc">
 
@@ -134,6 +157,14 @@ select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;bac
 <p class="opis">Obie warstwy z roku wybranego na górze strony.</p></div>
 <button class="przycisk" id="cmpBtn" style="width:100%;margin-top:14px">⇆ Włącz suwak</button>
 <div class="karta opis"><b>Spróbuj:</b> zdjęcie 2015 | 2024 nad Pustynią Błędowską albo podczerwień | temperatura nad Parkiem Śląskim – widać, że roślinność chłodzi.</div>
+</section>
+
+<!-- Kamila: problemy regionu -->
+<section data-zakladka="problemy">
+<h2>Problemy regionu</h2>
+<p class="opis">Siedem miejsc, w których dane satelitarne pokazują problemy środowiskowe Górnego Śląska. Najgorętsze miejsce, największy ubytek zieleni i nowa woda zostały wyszukane automatycznie przez program.</p>
+<button class="przycisk" id="tourBtn" style="width:100%">▶ Odtwórz wycieczkę</button>
+<div id="problemList"></div>
 </section>
 
 <!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, wartości wskaźników po kliknięciu w mapę -->
@@ -349,6 +380,58 @@ cmpBtn.addEventListener('click',()=>porownanie.aktywne?wylaczPorownanie():porown
 wybor.addEventListener('change',wylaczPorownanie);        // zwykły wybór warstwy kończy porównanie
 onYearChange.push(()=>{if(porownanie.aktywne&&porownanie.tryb==='warstwy')porownajZFormularza();});
 document.querySelector('#opacity').addEventListener('input',()=>{if(porownanie.aktywne){porownanie.lewa.setOpacity(currentOpacity);porownanie.prawa.setOpacity(currentOpacity);}});
+
+// Kamila: problemy regionu – wycieczka po miejscach wyszukanych w danych (cfg.stories z Pythona)
+const historia=document.querySelector('#historia');
+const podsumowanie=fetch('summary.json').then(r=>r.json()).catch(()=>null);
+let koloHistorii=null, aktualnaHistoria=-1;
+const liczba=(x,d=1)=>x.toFixed(d).replace('.',',').replace('-','−');
+function zakonczHistorie(){
+  historia.hidden=true; aktualnaHistoria=-1;
+  if(koloHistorii){map.removeLayer(koloHistorii);koloHistorii=null;}
+  document.querySelectorAll('.problem').forEach(p=>p.classList.remove('on'));
+}
+function pokazHistorie(i){
+  const lista=cfg.stories, n=lista.length;
+  aktualnaHistoria=i;
+  if(koloHistorii){map.removeLayer(koloHistorii);koloHistorii=null;}
+  document.querySelectorAll('.problem').forEach((p,k)=>p.classList.toggle('on',k===i));
+  historia.hidden=false;
+  const nawigacja='<div class="nawigacja"><button data-k="'+(i-1)+'"'+(i===0?' disabled':'')+'>◀ Wstecz</button>'+
+    (i<n?'<button class="glowny" data-k="'+(i+1)+'">'+(i===n-1?'Podsumowanie ▶':'Dalej ▶')+'</button>':'')+'<button data-k="x">✕</button></div>';
+  if(i<n){
+    const s=lista[i];
+    if(s.year!==rok)ustawRok(s.year);
+    if(s.compare){s.compare.mode==='lata'?porownajLata(s.compare.layer):porownajWarstwy(s.compare.left,s.compare.right);}
+    else{wylaczPorownanie(); wybor.value=s.layer; showLayer(s.layer);}
+    map.flyTo([s.lat,s.lon],s.zoom,{duration:2});
+    koloHistorii=L.circle([s.lat,s.lon],{radius:s.radius,color:'#ffffff',weight:3,dashArray:'8 6',fill:false,interactive:false}).addTo(map);
+    historia.innerHTML='<div class="nr">Problem '+(i+1)+' z '+n+'</div><h3>'+s.title+'</h3><p>'+s.text+'</p>'+
+      '<div class="fakty">'+s.facts.map(f=>'<span>'+f[0]+'<b>'+f[1]+'</b></span>').join('')+'</div>'+
+      (s.compare?'<p class="opis" style="margin-top:6px">⇆ Przeciągnij biały suwak na mapie, żeby porównać.</p>':'')+nawigacja;
+  }else{
+    wylaczPorownanie(); ustawRok('2024'); wybor.value='TEMP'; showLayer('TEMP');
+    map.flyToBounds(cfg.bounds,{duration:2});
+    const c=cfg.correlation;
+    historia.innerHTML='<div class="nr">Podsumowanie</div><h3>Zieleń to klimatyzacja regionu</h3>'+
+      '<p>W '+c.cells+' kwadratach 1 km temperatura powierzchni spada średnio o <b>'+liczba(-c.slope_per_10pp)+' °C</b> na każde 10 punktów procentowych zieleni (korelacja r = '+liczba(c.r,2)+'). '+
+      'Najgorętsze są centra miast, przemysł i odsłonięty piasek, najchłodniejsze – lasy i jeziora.</p><div class="fakty" id="faktyPodsumowania"></div>'+nawigacja;
+    podsumowanie.then(s=>{
+      const box=document.querySelector('#faktyPodsumowania'); if(!s||!box)return;
+      const t=Object.fromEntries(s.transitions.map(x=>[x.name,x.km2]));
+      box.innerHTML='<span>Średnio 2024<b>'+liczba(s.years['2024'].indices.TEMP.mean)+' °C</b></span>'+
+        '<span>Ubytek zieleni<b>'+liczba(t['Ubytek zieleni'],0)+' km²</b></span>'+
+        '<span>Przybytek zieleni<b>'+liczba(t['Przybytek zieleni'],0)+' km²</b></span>'+
+        '<span>Nowa woda<b>'+liczba(t['Nowa woda'])+' km²</b></span>';
+    });
+  }
+  historia.querySelectorAll('.nawigacja button').forEach(b=>b.onclick=()=>b.dataset.k==='x'?zakonczHistorie():pokazHistorie(Number(b.dataset.k)));
+}
+document.querySelector('#problemList').innerHTML=cfg.stories.map((s,i)=>
+  '<div class="problem" data-i="'+i+'"><span class="num">'+(i+1)+'</span><div><b>'+s.title+'</b><small>'+s.lead+'</small></div></div>').join('');
+document.querySelector('#problemList').addEventListener('click',e=>{const p=e.target.closest('.problem');if(p)pokazHistorie(Number(p.dataset.i));});
+document.querySelector('#tourBtn').addEventListener('click',()=>{if(window.innerWidth<700)zamknijPanel(); pokazHistorie(0);});
+L.DomEvent.disableClickPropagation(historia); L.DomEvent.disableScrollPropagation(historia);
 
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora i kliknięcia w mapę
 

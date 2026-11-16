@@ -326,7 +326,7 @@ def stories(arrays: dict, cls: dict, profile: dict, grid: dict) -> list:
 
     # 1. Wyspa ciepła Katowic
     kat, las = cs(50.2589, 19.0235, 1000), cs(50.205, 19.06, 1000)
-    out.append({'title': 'Wyspa ciepła Katowic', 'lat': 50.2589, 'lon': 19.0235, 'zoom': 12, 'year': '2024', 'layer': 'TEMP', 'radius': 1000,
+    out.append({'title': 'Wyspa ciepła Katowic', 'lead': f"Centrum o {pl(kat['t24'] - las['t24'])} °C cieplejsze niż las", 'lat': 50.2589, 'lon': 19.0235, 'zoom': 12, 'year': '2024', 'layer': 'TEMP', 'radius': 1000,
                 'text': f"12 sierpnia 2024 r. powierzchnia w centrum Katowic nagrzała się średnio do {pl(kat['t24'])} °C, "
                         f"a w Lesie Murckowskim, ok. 6 km dalej, tylko do {pl(las['t24'])} °C. Różnica: {pl(kat['t24'] - las['t24'])} °C. "
                         "Asfalt, dachy i brak drzew zamieniają śródmieście w wyspę ciepła.",
@@ -334,7 +334,7 @@ def stories(arrays: dict, cls: dict, profile: dict, grid: dict) -> list:
                           ['Zieleń w centrum', f"{pl(kat['z24'], 0)}%"]]})
     # 2. Park Śląski chłodzi
     park, chorzow = cs(50.29, 18.99), cs(50.2975, 18.9545)
-    out.append({'title': 'Park Śląski – zielona klimatyzacja', 'lat': 50.29, 'lon': 18.99, 'zoom': 13, 'year': '2024', 'radius': 500,
+    out.append({'title': 'Park Śląski – zielona klimatyzacja', 'lead': f"Park o {pl(chorzow['t24'] - park['t24'])} °C chłodniejszy niż centrum Chorzowa", 'lat': 50.29, 'lon': 18.99, 'zoom': 13, 'year': '2024', 'radius': 500,
                 'compare': {'mode': 'warstwy', 'left': 'PODCZERWIEN', 'right': 'TEMP'},
                 'text': f"Jeden z największych parków miejskich w Europie. W jego wnętrzu powierzchnia miała {pl(park['t24'])} °C, "
                         f"a w centrum pobliskiego Chorzowa {pl(chorzow['t24'])} °C. Przesuń suwak: tam, gdzie podczerwień pokazuje "
@@ -347,7 +347,7 @@ def stories(arrays: dict, cls: dict, profile: dict, grid: dict) -> list:
     hot = block_stats(arrays, cls, r * CELL, c * CELL)
     desert = abs(lat - 50.36) < 0.04 and abs(lon - 19.52) < 0.06
     out.append({'title': 'Pustynia Błędowska – najgorętszy kilometr' if desert else 'Najgorętszy kilometr regionu',
-                'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'layer': 'TEMP', 'radius': 500,
+                'lead': f"{pl(hot['t24'])} °C – najwyższa temperatura w całym atlasie", 'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'layer': 'TEMP', 'radius': 500,
                 'compare': {'mode': 'warstwy', 'left': 'RGB', 'right': 'TEMP'},
                 'text': (f"Program sam przeszukał {len(grid['features'])} kwadratów 1 km i znalazł najgorętszy: {pl(hot['t24'])} °C. "
                          + ("To Pustynia Błędowska – odsłonięty piasek nie paruje i nagrzewa się mocniej niż beton. "
@@ -356,7 +356,7 @@ def stories(arrays: dict, cls: dict, profile: dict, grid: dict) -> list:
                 'facts': [['Temperatura', f"{pl(hot['t24'])} °C"], ['NDVI', pl(hot['n24'], 2)], ['Zieleń', f"{pl(hot['z24'], 0)}%"]]})
     # 4. Jeziora po wydobyciu piasku
     pog = cs(50.36, 19.20, 1500)
-    out.append({'title': 'Pogorie – jeziora po kopalniach piasku', 'lat': 50.36, 'lon': 19.20, 'zoom': 12, 'year': '2024', 'layer': 'MNDWI', 'radius': 1500,
+    out.append({'title': 'Pogorie – jeziora po kopalniach piasku', 'lead': 'Woda po przemyśle chłodzi okolicę', 'lat': 50.36, 'lon': 19.20, 'zoom': 12, 'year': '2024', 'layer': 'MNDWI', 'radius': 1500,
                 'text': f"Jeziora Pogoria w Dąbrowie Górniczej powstały w zalanych wyrobiskach po wydobyciu piasku. "
                         f"W promieniu 1,5 km woda zajmuje {pl(pog['w24'], 0)}% powierzchni, a temperatura wynosi średnio "
                         f"{pl(pog['t24'])} °C – woda działa jak naturalny chłodnik okolicy.",
@@ -367,7 +367,7 @@ def stories(arrays: dict, cls: dict, profile: dict, grid: dict) -> list:
     lat, lon = cell_center(profile, r, c)
     loss = block_stats(arrays, cls, r * CELL, c * CELL)
     on_desert = abs(lat - 50.36) < 0.04 and abs(lon - 19.52) < 0.06
-    out.append({'title': 'Największy ubytek zieleni', 'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'radius': 500,
+    out.append({'title': 'Największy ubytek zieleni', 'lead': f"Zieleń: {pl(loss['z15'], 0)}% → {pl(loss['z24'], 0)}%", 'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'radius': 500,
                 'compare': {'mode': 'lata', 'layer': 'RGB'},
                 'text': f"W tym kwadracie NDVI spadło z {pl(loss['n15'], 2)} do {pl(loss['n24'], 2)}, a udział zieleni "
                         f"z {pl(loss['z15'], 0)}% do {pl(loss['z24'], 0)}%. "
@@ -378,7 +378,7 @@ def stories(arrays: dict, cls: dict, profile: dict, grid: dict) -> list:
     r, c = np.unravel_index(np.nanargmax(water24 - water15), water24.shape)
     lat, lon = cell_center(profile, r, c)
     wet = block_stats(arrays, cls, r * CELL, c * CELL)
-    out.append({'title': 'Tu pojawiła się woda', 'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'radius': 500,
+    out.append({'title': 'Tu pojawiła się woda', 'lead': f"Woda: {pl(wet['w15'], 0)}% → {pl(wet['w24'], 0)}%", 'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'radius': 500,
                 'compare': {'mode': 'lata', 'layer': 'MNDWI'},
                 'text': f"Udział wody w tym kwadracie wzrósł z {pl(wet['w15'], 0)}% do {pl(wet['w24'], 0)}%. Na Śląsku nowe zbiorniki "
                         "powstają m.in. w zalanych wyrobiskach i zapadliskach – suwak lat pokazuje zmianę.",
@@ -387,7 +387,7 @@ def stories(arrays: dict, cls: dict, profile: dict, grid: dict) -> list:
     r, c = np.unravel_index(np.nanargmax(np.where(land, dndvi, np.nan)), dndvi.shape)
     lat, lon = cell_center(profile, r, c)
     gain = block_stats(arrays, cls, r * CELL, c * CELL)
-    out.append({'title': 'Pola: susza 2015 kontra 2024', 'lat': lat, 'lon': lon, 'zoom': 12, 'year': '2024', 'radius': 500,
+    out.append({'title': 'Pola: susza 2015 kontra 2024', 'lead': 'Nie każda zmiana na mapie to zmiana krajobrazu', 'lat': lat, 'lon': lon, 'zoom': 12, 'year': '2024', 'radius': 500,
                 'compare': {'mode': 'lata', 'layer': 'NDVI'},
                 'text': f"Największy „przyrost zieleni” to pola uprawne: NDVI z {pl(gain['n15'], 2)} do {pl(gain['n24'], 2)}. "
                         "Sierpień 2015 r. przypadł na wielką suszę, a stan pól zależy też od terminu żniw – nie każda zmiana "
