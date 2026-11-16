@@ -674,6 +674,9 @@ gridMetric.addEventListener('change',odswiezSiatke);
 odswiezSiatke();
 
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora i kliknięcia w mapę
+// Wskazówki: w map.on('click', e => ...) pomiń kliknięcia z e.analiza === true (należą do analizy okolicy).
+// Wartości NDVI i temperatury w punkcie: wczytajPiksele(rok).then(...) i odczyt jak w statystykiKola()
+// (R = klasa, G = (NDVI + 1) · 127,5, B = temperatura · 4). Cały obszar: map.fitBounds(cfg.bounds).
 
 showLayer(currentLayer);
 </script></body></html>

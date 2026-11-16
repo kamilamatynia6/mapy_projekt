@@ -1,5 +1,21 @@
 # Landsat 8: wykład i laboratorium
 
+## V3: Atlas środowiskowy Górnego Śląska (nasz projekt)
+
+Strona V3 to nasz własny atlas: dwie sceny Landsat 8 Collection 2 (20.08.2015 i 12.08.2024) dla Górnego Śląska,
+temperatura powierzchni (wyspy ciepła), wskaźniki NDVI/NDBI/MNDWI, klasy pokrycia terenu, zmiany 2015 → 2024,
+suwak porównania, analiza okolicy, siatka 1 km, wykres „czy zieleń chłodzi?” i wycieczka „Problemy regionu”.
+
+```bash
+python tools/pobierz_slask.py      # raz: pobiera ok. 75 MB danych (internet, bez logowania)
+python src/atlas_slask.py          # buduje stronę w outputs/site (ok. 2 min, ok. 50 MB)
+python -m http.server 8000 --bind 127.0.0.1 --directory outputs/site
+```
+
+Uwaga: notatnik prowadzącego (Kraków) zapisuje inną stronę do tego samego `outputs/site` – przed publikacją V3
+uruchom ponownie `src/atlas_slask.py`.
+
+
 Kompletny pakiet na **wykład 90 minut i laboratorium 90 minut**. Analiza i przygotowanie mapy odbywają się w Pythonie, bez QGIS. IBIS pominięto. MODIS nie jest częścią obowiązkowego ćwiczenia; istniejący katalog MODIS_Terra pozostaje poza tym pakietem.
 
 ## Materiały
