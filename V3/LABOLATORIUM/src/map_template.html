@@ -113,6 +113,7 @@ table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:rig
 <button data-otworz="problemy">⚠<span>Problemy regionu</span></button>
 <button data-otworz="analiza">📍<span>Analiza okolicy</span></button>
 <button data-otworz="statystyki">📊<span>Statystyki</span></button>
+<button data-otworz="siatka">▦<span>Siatka 1 km</span></button>
 </div>
 
 <!-- Kamila: pionowa linia suwaka porównania -->
@@ -141,6 +142,7 @@ table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:rig
 <button data-zakladka="problemy">⚠ Problemy</button>
 <button data-zakladka="analiza">📍 Analiza</button>
 <button data-zakladka="statystyki">📊 Statystyki</button>
+<button data-zakladka="siatka">▦ Siatka</button>
 </nav>
 <div class="tresc">
 
@@ -206,6 +208,24 @@ table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:rig
 <h3>Czy zieleń chłodzi?</h3>
 <div id="scatter" class="opis">Wczytywanie wykresu…</div>
 <p class="opis">Każda kropka to kwadrat 1 km w 2024 r. Kliknij kropkę, żeby zobaczyć to miejsce na mapie. Chłodne kropki w lewym dolnym rogu to jeziora – nie mają zieleni, ale woda chłodzi.</p>
+</section>
+
+<!-- Kamila: siatka 1 km -->
+<section data-zakladka="siatka">
+<h2>Siatka 1 km</h2>
+<p class="opis">Cały obszar podzielony na kwadraty 1 × 1 km. Kolor pokazuje wybraną miarę, a po najechaniu myszą widać dane kwadratu z obu lat.</p>
+<label style="display:flex;gap:8px;align-items:center;font-size:15px;margin:8px 0"><input type="checkbox" id="gridOn"> Pokaż siatkę na mapie</label>
+<select id="gridMetric">
+<option value="t24">Temperatura 2024 [°C]</option>
+<option value="a24">Przegrzanie 2024 (względem mediany) [°C]</option>
+<option value="z24">Zieleń 2024 [%]</option>
+<option value="b24">Zabudowa i grunt 2024 [%]</option>
+<option value="dz">Zmiana zieleni 2015 → 2024 [p.p.]</option>
+<option value="da">Zmiana przegrzania 2015 → 2024 [°C]</option>
+</select>
+<div id="gridRamp" style="height:12px;border-radius:4px;margin-top:10px;border:1px solid #9bb"></div>
+<div id="gridTicks" style="display:flex;justify-content:space-between;font-size:12px"></div>
+<div class="karta opis" id="gridTop"></div>
 </section>
 
 <!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, wartości wskaźników po kliknięciu w mapę -->
@@ -604,6 +624,54 @@ function pokazStatystyki(){
   });
 }
 onTabOpen.statystyki=pokazStatystyki;
+
+// Kamila: siatka 1 km – kwadraty pokolorowane wybraną miarą, dane po najechaniu myszą
+const miary={
+  t24:{min:22,max:40,kolory:['#313695','#74add1','#ffffbf','#f46d43','#a50026'],j:' °C',d:1},
+  a24:{min:-6,max:8,kolory:['#2166ac','#92c5de','#f7f7f7','#f4a582','#b2182b'],j:' °C',d:1},
+  z24:{min:20,max:100,kolory:['#fff7bc','#a1d99b','#238b45','#00441b'],j:'%',d:0},
+  b24:{min:0,max:70,kolory:['#fff5eb','#fdae6b','#e6550d','#7f2704'],j:'%',d:0},
+  dz:{min:-30,max:30,kolory:['#8c510a','#d8b365','#f5f5f5','#5ab4ac','#01665e'],j:' p.p.',d:0},
+  da:{min:-5,max:5,kolory:['#2166ac','#92c5de','#f7f7f7','#f4a582','#b2182b'],j:' °C',d:1}
+};
+function kolorMiary(v,m){             // płynne przejście między kolorami skali
+  const t=Math.max(0,Math.min(1,(v-m.min)/(m.max-m.min)))*(m.kolory.length-1);
+  const i=Math.min(Math.floor(t),m.kolory.length-2), f=t-i;
+  const a=m.kolory[i].match(/\w\w/g).map(h=>parseInt(h,16)), b=m.kolory[i+1].match(/\w\w/g).map(h=>parseInt(h,16));
+  return 'rgb('+a.map((x,j)=>Math.round(x+(b[j]-x)*f)).join(',')+')';
+}
+function opisKwadratu(p){
+  const w=(a,b,j,d)=>liczba(a,d)+j+' → <b>'+liczba(b,d)+j+'</b>';
+  return '<b>Kwadrat ok. 1 km² • 2015 → 2024</b><br>Zieleń: '+w(p.z15,p.z24,'%',0)+'<br>Zabudowa i grunt: '+w(p.b15,p.b24,'%',0)+
+    '<br>Woda: '+w(p.w15,p.w24,'%',1)+'<br>NDVI: '+w(p.n15,p.n24,'',2)+'<br>Temperatura: '+w(p.t15,p.t24,' °C',1)+
+    '<br>Przegrzanie: '+w(p.a15,p.a24,' °C',1);
+}
+let siatka=null;
+const gridMetric=document.querySelector('#gridMetric');
+function odswiezSiatke(){
+  const klucz=gridMetric.value, m=miary[klucz];
+  document.querySelector('#gridRamp').style.background='linear-gradient(to right,'+m.kolory.join(',')+')';
+  document.querySelector('#gridTicks').innerHTML='<span>≤ '+liczba(m.min,0)+m.j+'</span><span>'+liczba((m.min+m.max)/2,0)+'</span><span>≥ '+liczba(m.max,0)+m.j+'</span>';
+  if(!siatka)return;
+  siatka.setStyle(f=>({color:'#ffffff',weight:.3,fillOpacity:.82,fillColor:kolorMiary(f.properties[klucz],m)}));
+  const cechy=[];siatka.eachLayer(l=>cechy.push(l.feature.properties));
+  cechy.sort((a,b)=>b[klucz]-a[klucz]);
+  document.querySelector('#gridTop').innerHTML='Najwyższa wartość: <b>'+liczba(cechy[0][klucz],m.d)+m.j+'</b>, najniższa: <b>'+liczba(cechy[cechy.length-1][klucz],m.d)+m.j+'</b> • '+cechy.length+' kwadratów';
+}
+document.querySelector('#gridOn').addEventListener('change',e=>{
+  if(!e.target.checked){if(siatka)map.removeLayer(siatka);return;}
+  if(siatka){siatka.addTo(map);return;}
+  siatkaDane.then(g=>{
+    siatka=L.geoJSON(g,{renderer:L.canvas(),onEachFeature:(f,l)=>{
+      l.bindTooltip(()=>opisKwadratu(f.properties),{sticky:true});
+      l.on('mouseover',()=>l.setStyle({weight:2.5,color:'#0f2a33'}));
+      l.on('mouseout',()=>l.setStyle({weight:.3,color:'#ffffff'}));
+    }}).addTo(map);
+    odswiezSiatke();
+  });
+});
+gridMetric.addEventListener('change',odswiezSiatke);
+odswiezSiatke();
 
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora i kliknięcia w mapę
 
