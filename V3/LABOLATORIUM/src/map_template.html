@@ -45,6 +45,16 @@ select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;bac
 /* legenda na mapie */
 .legenda{position:absolute;left:14px;bottom:34px;z-index:1000;background:rgba(255,255,255,.95);border-radius:12px;box-shadow:var(--cien);padding:10px 12px;width:260px;font-size:13px}
 .legenda b{display:block;margin-bottom:6px}
+/* Kamila: suwak porównania */
+#suwak{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;background:#fff;z-index:950;box-shadow:0 0 10px rgba(0,0,0,.55);cursor:ew-resize;touch-action:none}
+#suwak .uchwyt{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;background:#fff;box-shadow:var(--cien);display:grid;place-items:center;font-size:20px;color:var(--granat)}
+#suwak .etykieta{position:absolute;top:14px;background:rgba(15,42,51,.9);color:#fff;padding:5px 12px;border-radius:999px;font:600 13px system-ui,sans-serif;white-space:nowrap}
+#suwak .lewa{right:14px}
+#suwak .prawa{left:14px}
+.tryby{display:flex;gap:6px;margin:8px 0}
+.tryby label{flex:1;text-align:center;border:1px solid #b9c9c7;border-radius:8px;padding:7px;cursor:pointer;font-weight:600;font-size:14px;background:#fff}
+.tryby label:has(input:checked){background:var(--granat);color:#fff;border-color:var(--granat)}
+.tryby input{display:none}
 @media(max-width:700px){h1{font-size:16px}header p{display:none}.legenda{width:200px}body.panel-otwarty .narzedzia{right:14px;opacity:0;pointer-events:none}}
 </style></head><body>
 <header>
@@ -63,7 +73,11 @@ select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;bac
 <!-- Kamila: pasek narzędzi – każdy przycisk otwiera zakładkę panelu -->
 <div class="narzedzia" id="narzedzia">
 <button data-otworz="warstwy">🗺<span>Warstwy</span></button>
+<button data-otworz="porownaj">⇆<span>Porównaj</span></button>
 </div>
+
+<!-- Kamila: pionowa linia suwaka porównania -->
+<div id="suwak" hidden><div class="uchwyt">⇆</div><span class="etykieta lewa"></span><span class="etykieta prawa"></span></div>
 
 <!-- Amelia: legenda (teraz jako karta na mapie, zawsze widoczna) -->
 <div class="legenda" id="legendCard">
@@ -81,6 +95,7 @@ select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;bac
 <div class="panel-gora"><b>Atlas – narzędzia</b><button class="zamknij" id="panelClose" aria-label="Zamknij panel">✕</button></div>
 <nav class="zakladki" id="zakladki">
 <button data-zakladka="warstwy">🗺 Warstwy</button>
+<button data-zakladka="porownaj">⇆ Porównaj</button>
 </nav>
 <div class="tresc">
 
@@ -107,6 +122,18 @@ select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;bac
 <label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:14px"><input type="checkbox" id="labels" checked> Nazwy miejscowości nad mapą</label>
 
 <div class="karta opis" id="sceneInfo"></div>
+</section>
+
+<!-- Kamila: zakładka porównania -->
+<section data-zakladka="porownaj">
+<h2>Suwak porównania</h2>
+<p class="opis">Na mapie pojawi się pionowa linia. Przeciągnij ją, żeby zobaczyć dwie wersje tego samego miejsca.</p>
+<div class="tryby"><label><input type="radio" name="tryb" value="lata" checked>2015 | 2024</label><label><input type="radio" name="tryb" value="warstwy">Dwie warstwy</label></div>
+<div id="trybLata"><h3>Warstwa w obu latach</h3><select id="cmpLayer"></select></div>
+<div id="trybWarstwy" hidden><h3>Lewa strona</h3><select id="cmpLeft"></select><h3>Prawa strona</h3><select id="cmpRight"></select>
+<p class="opis">Obie warstwy z roku wybranego na górze strony.</p></div>
+<button class="przycisk" id="cmpBtn" style="width:100%;margin-top:14px">⇆ Włącz suwak</button>
+<div class="karta opis"><b>Spróbuj:</b> zdjęcie 2015 | 2024 nad Pustynią Błędowską albo podczerwień | temperatura nad Parkiem Śląskim – widać, że roślinność chłodzi.</div>
 </section>
 
 <!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, wartości wskaźników po kliknięciu w mapę -->
@@ -245,6 +272,83 @@ document.querySelector('#narzedzia').addEventListener('click',e=>{
 document.querySelector('#panelBtn').addEventListener('click',()=>document.body.classList.contains('panel-otwarty')?zamknijPanel():otworzZakladke('warstwy'));
 document.querySelector('#panelClose').addEventListener('click',zamknijPanel);
 ['narzedzia','legendCard','panel'].forEach(id=>{const el=document.getElementById(id);L.DomEvent.disableClickPropagation(el);L.DomEvent.disableScrollPropagation(el);});
+
+// Kamila: suwak porównania – dwie warstwy kafelków przycięte pionową linią (CSS clip)
+const porownanie={aktywne:false,lewa:null,prawa:null,x:0.5,tryb:'lata'};
+const suwak=document.querySelector('#suwak'), cmpBtn=document.querySelector('#cmpBtn');
+function przytnij(){
+  if(!porownanie.aktywne)return;
+  const nw=map.containerPointToLayerPoint([0,0]), se=map.containerPointToLayerPoint(map.getSize());
+  const cx=nw.x+map.getSize().x*porownanie.x;
+  porownanie.lewa.getContainer().style.clip='rect('+[nw.y,cx,se.y,nw.x].join('px,')+'px)';
+  porownanie.prawa.getContainer().style.clip='rect('+[nw.y,se.x,se.y,cx].join('px,')+'px)';
+  suwak.style.left=(porownanie.x*100)+'%';
+}
+function wlaczPorownanie(lewa,prawa){              // lewa, prawa: {folder, name, etykieta}
+  wylaczPorownanie();
+  if(overlay)map.removeLayer(overlay);
+  porownanie.lewa=kafelki(lewa.folder,lewa.name).addTo(map);
+  porownanie.prawa=kafelki(prawa.folder,prawa.name).addTo(map);
+  porownanie.aktywne=true; suwak.hidden=false;
+  suwak.querySelector('.lewa').textContent='◀ '+lewa.etykieta;
+  suwak.querySelector('.prawa').textContent=prawa.etykieta+' ▶';
+  cmpBtn.textContent='✕ Wyłącz suwak';
+  przytnij();
+}
+function wylaczPorownanie(){
+  if(!porownanie.aktywne)return;
+  map.removeLayer(porownanie.lewa); map.removeLayer(porownanie.prawa);
+  porownanie.aktywne=false; suwak.hidden=true;
+  cmpBtn.textContent='⇆ Włącz suwak';
+  if(overlay&&!map.hasLayer(overlay))overlay.addTo(map);
+}
+function pokazTrybFormularza(tryb){               // formularz w panelu pokazuje aktualny tryb
+  document.querySelector('input[name=tryb][value='+tryb+']').checked=true;
+  document.querySelector('#trybLata').hidden=tryb!=='lata'; document.querySelector('#trybWarstwy').hidden=tryb==='lata';
+}
+function porownajLata(name){                       // ta sama warstwa: 2015 po lewej, 2024 po prawej
+  porownanie.tryb='lata'; pokazTrybFormularza('lata'); document.querySelector('#cmpLayer').value=name;
+  wybor.value=name; showLayer(name);
+  const lata=Object.keys(cfg.years);
+  wlaczPorownanie({folder:lata[0],name,etykieta:lata[0]},{folder:lata[1],name,etykieta:lata[1]});
+}
+function porownajWarstwy(lewa,prawa){              // dwie różne warstwy z jednego roku
+  porownanie.tryb='warstwy'; pokazTrybFormularza('warstwy');
+  document.querySelector('#cmpLeft').value=lewa; document.querySelector('#cmpRight').value=prawa;
+  wybor.value=prawa; showLayer(prawa);
+  const opis=n=>cfg.layers[n].label+(cfg.layers[n].group==='rok'?' '+rok:'');
+  wlaczPorownanie({folder:folderWarstwy(lewa),name:lewa,etykieta:opis(lewa)},{folder:folderWarstwy(prawa),name:prawa,etykieta:opis(prawa)});
+}
+map.on('move zoom zoomend viewreset resize',przytnij);
+suwak.addEventListener('pointerdown',e=>{
+  suwak.setPointerCapture(e.pointerId); map.dragging.disable();
+  const ruch=ev=>{const r=map.getContainer().getBoundingClientRect(); porownanie.x=Math.min(.98,Math.max(.02,(ev.clientX-r.left)/r.width)); przytnij();};
+  const koniec=()=>{suwak.removeEventListener('pointermove',ruch); suwak.removeEventListener('pointerup',koniec); map.dragging.enable();};
+  suwak.addEventListener('pointermove',ruch); suwak.addEventListener('pointerup',koniec);
+});
+L.DomEvent.disableClickPropagation(suwak);
+// formularz w panelu
+const opcjeWarstw=grupy=>Object.entries(cfg.layers).filter(([k,v])=>grupy.includes(v.group)).map(([k,v])=>'<option value="'+k+'">'+v.label+'</option>').join('');
+document.querySelector('#cmpLayer').innerHTML=opcjeWarstw(['rok']);
+document.querySelector('#cmpLeft').innerHTML=opcjeWarstw(['rok','zmiany']);
+document.querySelector('#cmpRight').innerHTML=opcjeWarstw(['rok','zmiany']);
+document.querySelector('#cmpLayer').value='RGB';
+document.querySelector('#cmpLeft').value='PODCZERWIEN';
+document.querySelector('#cmpRight').value='TEMP';
+function porownajZFormularza(){
+  if(document.querySelector('input[name=tryb]:checked').value==='lata')porownajLata(document.querySelector('#cmpLayer').value);
+  else porownajWarstwy(document.querySelector('#cmpLeft').value,document.querySelector('#cmpRight').value);
+}
+document.querySelectorAll('input[name=tryb]').forEach(r=>r.addEventListener('change',()=>{
+  const lataOn=document.querySelector('input[name=tryb]:checked').value==='lata';
+  document.querySelector('#trybLata').hidden=!lataOn; document.querySelector('#trybWarstwy').hidden=lataOn;
+  if(porownanie.aktywne)porownajZFormularza();       // przełącz tryb od razu
+}));
+cmpBtn.addEventListener('click',()=>porownanie.aktywne?wylaczPorownanie():porownajZFormularza());
+['cmpLayer','cmpLeft','cmpRight'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{if(porownanie.aktywne)porownajZFormularza();}));
+wybor.addEventListener('change',wylaczPorownanie);        // zwykły wybór warstwy kończy porównanie
+onYearChange.push(()=>{if(porownanie.aktywne&&porownanie.tryb==='warstwy')porownajZFormularza();});
+document.querySelector('#opacity').addEventListener('input',()=>{if(porownanie.aktywne){porownanie.lewa.setOpacity(currentOpacity);porownanie.prawa.setOpacity(currentOpacity);}});
 
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora i kliknięcia w mapę
 
