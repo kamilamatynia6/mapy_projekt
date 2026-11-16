@@ -73,6 +73,14 @@ body.panel-otwarty .historia{left:calc(50% - 195px)}
 .problem .num{flex:none;width:28px;height:28px;border-radius:50%;background:var(--akcent);color:#fff;display:grid;place-items:center;font-weight:700}
 .problem b{display:block}
 .problem small{color:var(--szary)}
+/* Kamila: analiza okolicy */
+.dwa{display:flex;gap:10px;justify-content:space-around;text-align:center;margin:10px 0}
+.dwa b{display:block;font-size:13px;color:var(--szary)}
+table.zmiany{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+table.zmiany th{font-size:12px;color:var(--szary);text-align:right;font-weight:600;padding:3px}
+table.zmiany th:first-child,table.zmiany td:first-child{text-align:left}
+table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:right}
+.plus{color:#1a7f37;font-weight:700}.minus{color:#c0392b;font-weight:700}
 @media(max-width:700px){h1{font-size:16px}header p{display:none}.legenda{width:200px}body.panel-otwarty .narzedzia{right:14px;opacity:0;pointer-events:none}}
 </style></head><body>
 <header>
@@ -93,6 +101,7 @@ body.panel-otwarty .historia{left:calc(50% - 195px)}
 <button data-otworz="warstwy">🗺<span>Warstwy</span></button>
 <button data-otworz="porownaj">⇆<span>Porównaj</span></button>
 <button data-otworz="problemy">⚠<span>Problemy regionu</span></button>
+<button data-otworz="analiza">📍<span>Analiza okolicy</span></button>
 </div>
 
 <!-- Kamila: pionowa linia suwaka porównania -->
@@ -119,6 +128,7 @@ body.panel-otwarty .historia{left:calc(50% - 195px)}
 <button data-zakladka="warstwy">🗺 Warstwy</button>
 <button data-zakladka="porownaj">⇆ Porównaj</button>
 <button data-zakladka="problemy">⚠ Problemy</button>
+<button data-zakladka="analiza">📍 Analiza</button>
 </nav>
 <div class="tresc">
 
@@ -165,6 +175,16 @@ body.panel-otwarty .historia{left:calc(50% - 195px)}
 <p class="opis">Siedem miejsc, w których dane satelitarne pokazują problemy środowiskowe Górnego Śląska. Najgorętsze miejsce, największy ubytek zieleni i nowa woda zostały wyszukane automatycznie przez program.</p>
 <button class="przycisk" id="tourBtn" style="width:100%">▶ Odtwórz wycieczkę</button>
 <div id="problemList"></div>
+</section>
+
+<!-- Kamila: analiza okolicy -->
+<section data-zakladka="analiza">
+<h2>Analiza okolicy</h2>
+<p class="opis">Wybierz dowolne miejsce. Przeglądarka sama policzy, co jest w kole, i porówna 2015 z 2024.</p>
+<button class="przycisk" id="analyzeBtn" style="width:100%">📍 Wybierz miejsce na mapie</button>
+<h3>Promień: <span id="radiusValue">1 km</span></h3>
+<input id="radius" type="range" min="250" max="5000" step="250" value="1000">
+<div id="analyzeResult" class="opis">Kliknij przycisk, a potem dowolne miejsce na mapie – np. swoje osiedle.</div>
 </section>
 
 <!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, wartości wskaźników po kliknięciu w mapę -->
@@ -432,6 +452,89 @@ document.querySelector('#problemList').innerHTML=cfg.stories.map((s,i)=>
 document.querySelector('#problemList').addEventListener('click',e=>{const p=e.target.closest('.problem');if(p)pokazHistorie(Number(p.dataset.i));});
 document.querySelector('#tourBtn').addEventListener('click',()=>{if(window.innerWidth<700)zamknijPanel(); pokazHistorie(0);});
 L.DomEvent.disableClickPropagation(historia); L.DomEvent.disableScrollPropagation(historia);
+
+// Kamila: analiza okolicy – piksele z rastrów analiza_2015.png i analiza_2024.png
+// (R = klasa, G = (NDVI + 1) · 127,5, B = temperatura · 4) liczone w kole o wybranym promieniu
+let trybAnalizy=false, koloAnalizy=null, srodekAnalizy=null;
+const daneAnalizy={};
+function wczytajPiksele(y){
+  if(daneAnalizy[y])return Promise.resolve(daneAnalizy[y]);
+  return new Promise((ok,blad)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+      const ctx=c.getContext('2d'); ctx.drawImage(img,0,0);
+      daneAnalizy[y]=ctx.getImageData(0,0,img.width,img.height).data; ok(daneAnalizy[y]);
+    };
+    img.onerror=blad; img.src=cfg.probe[y].url;
+  });
+}
+function statystykiKola(y,punkt,promien){
+  const p=cfg.probe[y], d=daneAnalizy[y], [[s,w],[n,e]]=p.bounds, dx=(e-w)/p.width, dy=(n-s)/p.height;
+  const mLat=110540, mLng=111320*Math.cos(punkt.lat*Math.PI/180);         // metry na stopień
+  const x0=Math.max(0,Math.floor((punkt.lng-promien/mLng-w)/dx)), x1=Math.min(p.width-1,Math.ceil((punkt.lng+promien/mLng-w)/dx));
+  const y0=Math.max(0,Math.floor((n-punkt.lat-promien/mLat)/dy)), y1=Math.min(p.height-1,Math.ceil((n-punkt.lat+promien/mLat)/dy));
+  const licz=[0,0,0,0,0]; let ndvi=0, temp=0, wKole=0;
+  for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++){
+    const lng=w+(xx+.5)*dx, lat=n-(yy+.5)*dy;
+    if(Math.hypot((lng-punkt.lng)*mLng,(lat-punkt.lat)*mLat)>promien)continue;
+    wKole++;
+    const i=(yy*p.width+xx)*4;
+    if(!d[i])continue;                                                      // brak danych
+    licz[d[i]]++; ndvi+=d[i+1]/127.5-1; temp+=d[i+2]/4;
+  }
+  const razem=licz[1]+licz[2]+licz[3]+licz[4];
+  if(!razem)return null;
+  return {udzial:[0,1,2,3,4].map(k=>100*licz[k]/razem), zielen:100*(licz[2]+licz[3])/razem,
+          ndvi:ndvi/razem, temp:temp/razem, pokrycie:razem/wKole};
+}
+function pierscien(udzial,podpis){                  // wykres pierścieniowy SVG (obwód = 100)
+  let suma=0;
+  return '<svg viewBox="0 0 42 42" width="104" height="104"><circle cx="21" cy="21" r="15.915" fill="none" stroke="#dde5e4" stroke-width="7"/>'+
+    cfg.classes.map(c=>{const u=udzial[c.id], s='<circle cx="21" cy="21" r="15.915" fill="none" stroke="'+c.color+'" stroke-width="7" stroke-dasharray="'+u+' '+(100-u)+'" stroke-dashoffset="'+(125-suma)+'"/>'; suma+=u; return s;}).join('')+
+    '<text x="21" y="23.5" text-anchor="middle" font-size="7" font-weight="700" fill="#173541">'+podpis+'</text></svg>';
+}
+function analizuj(){
+  if(!srodekAnalizy)return;
+  const promien=Number(document.querySelector('#radius').value), wynik=document.querySelector('#analyzeResult');
+  if(koloAnalizy)map.removeLayer(koloAnalizy);
+  koloAnalizy=L.circle(srodekAnalizy,{radius:promien,color:'#e4572e',weight:3,fillOpacity:.06,dashArray:'8 6',interactive:false}).addTo(map);
+  const lata=Object.keys(cfg.years);
+  Promise.all([...lata.map(wczytajPiksele),podsumowanie]).then(([, ,sum])=>{
+    const [a,b]=lata.map(y=>statystykiKola(y,srodekAnalizy,promien));
+    if(!a||!b){wynik.textContent='Tu nie ma danych – wybierz miejsce wewnątrz przerywanej ramki.';return;}
+    const zmiana=(x,y,d,j,lepiejWiecej)=>{const r=y-x, kl=Math.abs(r)<Math.pow(10,-d)/2?'':((r>0)===lepiejWiecej?'plus':'minus');
+      return '<td>'+liczba(x,d)+j+'</td><td>'+liczba(y,d)+j+'</td><td class="'+kl+'">'+(r>0?'+':'')+liczba(r,d)+'</td>';};
+    const przegrzanie=sum?b.temp-sum.years[lata[1]].indices.TEMP.median:null;
+    wynik.style.color='var(--tekst)';
+    wynik.innerHTML='<div class="dwa"><div><b>'+lata[0]+'</b>'+pierscien(a.udzial,Math.round(a.zielen)+'%')+'</div><div><b>'+lata[1]+'</b>'+pierscien(b.udzial,Math.round(b.zielen)+'%')+'</div></div>'+
+      '<p class="opis" style="text-align:center;margin:0">w środku: udział zieleni</p>'+
+      '<table class="zmiany"><tr><th></th><th>'+lata[0]+'</th><th>'+lata[1]+'</th><th>zmiana</th></tr>'+
+      '<tr><td>Zieleń</td>'+zmiana(a.zielen,b.zielen,0,'%',true)+'</tr>'+
+      '<tr><td>Zabudowa i grunt</td>'+zmiana(a.udzial[4],b.udzial[4],0,'%',false)+'</tr>'+
+      '<tr><td>Woda</td>'+zmiana(a.udzial[1],b.udzial[1],1,'%',true)+'</tr>'+
+      '<tr><td>NDVI</td>'+zmiana(a.ndvi,b.ndvi,2,'',true)+'</tr>'+
+      '<tr><td>Temperatura</td>'+zmiana(a.temp,b.temp,1,' °C',false)+'</tr></table>'+
+      (przegrzanie!==null?'<div class="karta" style="margin-top:12px">W '+lata[1]+' r. to miejsce było <b>'+(przegrzanie>=0?'o '+liczba(przegrzanie)+' °C cieplejsze':'o '+liczba(-przegrzanie)+' °C chłodniejsze')+'</b> niż typowe miejsce w regionie (mediana '+liczba(sum.years[lata[1]].indices.TEMP.median)+' °C).</div>':'')+
+      '<p class="opis">Koło '+liczba(Math.PI*promien*promien/1e6,2)+' km²'+(b.pokrycie<.95?' • dane dla '+Math.round(100*b.pokrycie)+'% koła':'')+'. Temperatury z dwóch różnych dni – porównuj raczej przegrzanie niż surowe °C.</p>';
+  }).catch(()=>{wynik.textContent='Analiza działa po otwarciu strony przez serwer HTTP.';});
+}
+const analyzeBtn=document.querySelector('#analyzeBtn');
+function ustawTrybAnalizy(on){
+  trybAnalizy=on; map.getContainer().style.cursor=on?'crosshair':'';
+  analyzeBtn.textContent=on?'✕ Anuluj – kliknij miejsce na mapie':(srodekAnalizy?'📍 Wybierz inne miejsce':'📍 Wybierz miejsce na mapie');
+}
+analyzeBtn.addEventListener('click',()=>ustawTrybAnalizy(!trybAnalizy));
+map.on('click',e=>{
+  if(!trybAnalizy)return;
+  e.analiza=true;                 // znacznik dla innych obsług kliknięcia: to kliknięcie należy do analizy
+  srodekAnalizy=e.latlng; ustawTrybAnalizy(false); analizuj();
+});
+document.querySelector('#radius').addEventListener('input',e=>{
+  const m=Number(e.target.value);
+  document.querySelector('#radiusValue').textContent=m>=1000?liczba(m/1000,m%1000?2:0).replace(/,?0+$/,'')+' km':m+' m';
+  analizuj();
+});
 
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora i kliknięcia w mapę
 
