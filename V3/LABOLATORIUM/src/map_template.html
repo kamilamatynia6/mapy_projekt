@@ -1,161 +1,682 @@
 <!doctype html>
 <html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Landsat 8 • Kraków i okolice • V3</title><link rel="stylesheet" href="vendor/leaflet.css">
+<title>Atlas środowiskowy Górnego Śląska • V3</title><link rel="stylesheet" href="vendor/leaflet.css">
 <style>
+/* Kamila: wygląd atlasu – mapa na cały ekran, wysuwany panel, pływające karty */
+:root{--granat:#0f2a33;--granat2:#173f4b;--tekst:#173541;--szary:#5b7480;--tlo:#f4f7f6;--akcent:#e4572e;--linia:#d6e0de;--cien:0 6px 24px rgba(10,30,40,.28)}
 *{box-sizing:border-box}
-body{margin:0;font:16px system-ui,sans-serif;color:#173541;background:#f5f7f6;display:flex;flex-direction:column;height:100vh}
-header{padding:16px 24px;background:#133e4a;color:white}
-h1{font-size:24px;margin:0}
-main{display:grid;grid-template-columns:1fr 300px;flex:1;min-height:450px}
-#map{height:100%;background:#e6eceb}
-aside{padding:20px;overflow:auto}
-aside h2{font-size:17px;margin:0 0 8px}
-aside section{margin-bottom:22px}
-@media(max-width:700px){main{display:flex;flex-direction:column;height:auto}#map{height:62vh;min-height:350px}}
+html,body{height:100%}
+body{margin:0;font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tekst);background:var(--granat);display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:16px;padding:10px 18px;background:linear-gradient(90deg,#0b222a,#173f4b);color:#fff;z-index:1100;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+header .tytul{flex:1;min-width:0}
+h1{font-size:21px;margin:0;letter-spacing:.2px}
+header p{margin:2px 0 0;font-size:13px;color:#bcd3d6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lata{display:flex;background:rgba(255,255,255,.12);border-radius:999px;padding:3px}
+.lata button{border:0;background:transparent;color:#d8e7e8;font:600 14px system-ui,sans-serif;padding:6px 14px;border-radius:999px;cursor:pointer}
+.lata button.on{background:#fff;color:var(--granat)}
+.przycisk{border:0;border-radius:8px;padding:8px 14px;background:var(--akcent);color:#fff;font:600 14px system-ui,sans-serif;cursor:pointer}
+#obszar{position:relative;flex:1;min-height:0;overflow:hidden}
+#map{position:absolute;inset:0;background:#dfe7e6}
+/* pasek narzędzi na mapie */
+.narzedzia{position:absolute;top:14px;right:14px;z-index:1000;display:flex;flex-direction:column;gap:8px;transition:right .3s}
+body.panel-otwarty .narzedzia{right:404px}
+.narzedzia button{width:46px;height:46px;border:0;border-radius:12px;background:rgba(255,255,255,.95);box-shadow:var(--cien);font-size:20px;cursor:pointer;position:relative}
+.narzedzia button.on{background:var(--granat);color:#fff}
+.narzedzia button span{position:absolute;right:54px;top:50%;transform:translateY(-50%);background:var(--granat);color:#fff;font:600 12px system-ui,sans-serif;padding:4px 8px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s}
+.narzedzia button:hover span{opacity:1}
+/* wysuwany panel */
+#panel{position:absolute;top:0;right:0;bottom:0;width:390px;max-width:100vw;background:var(--tlo);z-index:1050;box-shadow:-6px 0 24px rgba(0,0,0,.25);transform:translateX(105%);transition:transform .3s ease;display:flex;flex-direction:column}
+body.panel-otwarty #panel{transform:none}
+.panel-gora{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 0}
+.panel-gora b{font-size:17px}
+.zamknij{border:0;background:transparent;font-size:22px;cursor:pointer;color:var(--szary)}
+.zakladki{display:flex;gap:4px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--linia)}
+.zakladki button{border:0;background:#e3ebea;border-radius:8px;padding:6px 10px;font:600 13px system-ui,sans-serif;color:var(--tekst);cursor:pointer}
+.zakladki button.on{background:var(--granat);color:#fff}
+.tresc{flex:1;overflow:auto;padding:14px 16px 30px}
+.tresc section[data-zakladka]{display:none}
+.tresc section.on{display:block}
+.tresc h2{font-size:17px;margin:4px 0 8px}
+.tresc h3{font-size:14px;margin:16px 0 6px;color:var(--szary);text-transform:uppercase;letter-spacing:.5px}
+.karta{background:#fff;border:1px solid var(--linia);border-radius:12px;padding:12px;margin:10px 0}
+.opis{font-size:13px;color:var(--szary)}
+select,input[type=range]{width:100%}
+select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;background:#fff}
+/* legenda na mapie */
+.legenda{position:absolute;left:14px;bottom:34px;z-index:1000;background:rgba(255,255,255,.95);border-radius:12px;box-shadow:var(--cien);padding:10px 12px;width:260px;font-size:13px}
+.legenda b{display:block;margin-bottom:6px}
+/* Kamila: suwak porównania */
+#suwak{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;background:#fff;z-index:950;box-shadow:0 0 10px rgba(0,0,0,.55);cursor:ew-resize;touch-action:none}
+#suwak .uchwyt{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;background:#fff;box-shadow:var(--cien);display:grid;place-items:center;font-size:20px;color:var(--granat)}
+#suwak .etykieta{position:absolute;top:14px;background:rgba(15,42,51,.9);color:#fff;padding:5px 12px;border-radius:999px;font:600 13px system-ui,sans-serif;white-space:nowrap}
+#suwak .lewa{right:14px}
+#suwak .prawa{left:14px}
+.tryby{display:flex;gap:6px;margin:8px 0}
+.tryby label{flex:1;text-align:center;border:1px solid #b9c9c7;border-radius:8px;padding:7px;cursor:pointer;font-weight:600;font-size:14px;background:#fff}
+.tryby label:has(input:checked){background:var(--granat);color:#fff;border-color:var(--granat)}
+.tryby input{display:none}
+/* Kamila: karta problemu na mapie i lista problemów */
+.historia{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);width:min(580px,calc(100% - 40px));z-index:1000;background:rgba(255,255,255,.97);border-radius:16px;box-shadow:var(--cien);padding:16px 18px;transition:left .3s}
+body.panel-otwarty .historia{left:calc(50% - 195px)}
+.historia .nr{font:600 12px system-ui,sans-serif;color:var(--akcent);text-transform:uppercase;letter-spacing:.6px}
+.historia h3{margin:3px 0 6px;font-size:20px;color:var(--tekst)}
+.historia p{margin:0;font-size:14px}
+.fakty{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 2px}
+.fakty span{background:#eef4f3;border-radius:10px;padding:6px 10px;font-size:13px}
+.fakty b{display:block;font-size:17px;color:var(--granat)}
+.nawigacja{display:flex;gap:8px;margin-top:12px}
+.nawigacja button{flex:1;padding:8px;border:1px solid var(--granat);border-radius:8px;background:#fff;color:var(--granat);font:600 14px system-ui,sans-serif;cursor:pointer}
+.nawigacja button.glowny{background:var(--granat);color:#fff}
+.nawigacja button:disabled{opacity:.35;cursor:default}
+.problem{display:flex;gap:10px;align-items:flex-start;background:#fff;border:1px solid var(--linia);border-radius:12px;padding:10px;margin:8px 0;cursor:pointer}
+.problem:hover,.problem.on{border-color:var(--akcent);box-shadow:0 0 0 2px rgba(228,87,46,.2)}
+.problem .num{flex:none;width:28px;height:28px;border-radius:50%;background:var(--akcent);color:#fff;display:grid;place-items:center;font-weight:700}
+.problem b{display:block}
+.problem small{color:var(--szary)}
+/* Kamila: analiza okolicy */
+.dwa{display:flex;gap:10px;justify-content:space-around;text-align:center;margin:10px 0}
+.dwa b{display:block;font-size:13px;color:var(--szary)}
+table.zmiany{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+table.zmiany th{font-size:12px;color:var(--szary);text-align:right;font-weight:600;padding:3px}
+table.zmiany th:first-child,table.zmiany td:first-child{text-align:left}
+table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:right}
+.plus{color:#1a7f37;font-weight:700}.minus{color:#c0392b;font-weight:700}
+/* Kamila: statystyki */
+.slupki{margin:6px 0 12px}
+.slupki .wiersz{display:grid;grid-template-columns:44px 1fr 52px;gap:6px;align-items:center;font-size:13px;margin:2px 0}
+.slupki .tor{background:#e3ebea;border-radius:4px;height:11px;overflow:hidden}
+.slupki .tor div{height:100%;border-radius:4px}
+.liczby{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.liczby div{background:#fff;border:1px solid var(--linia);border-radius:10px;padding:8px 10px;font-size:12px;color:var(--szary)}
+.liczby b{display:block;font-size:18px;color:var(--granat)}
+#scatter svg circle.pkt{cursor:pointer}
+#scatter svg circle.pkt:hover{stroke:#0f2a33;stroke-width:1.5}
+@media(max-width:700px){h1{font-size:16px}header p{display:none}.legenda{width:200px}body.panel-otwarty .narzedzia{right:14px;opacity:0;pointer-events:none}}
 </style></head><body>
 <header>
-<h1>Atlas środowiskowy Krakowa</h1>
+<div class="tytul">
+<h1>Atlas środowiskowy Górnego Śląska</h1>
 <!-- Amelia: podtytuł z datą sceny i autorami -->
-<p style="margin:4px 0 0;font-size:14px;color:#d8e7e8">Atlas środowiskowy • scena z 7 sierpnia 2013 • Kamila Matynia, Amelia Hajduga, Rafał Złoza</p>
+<p>Landsat 8 • 20.08.2015 i 12.08.2024 • Kamila Matynia, Amelia Hajduga, Rafał Złoza</p>
+</div>
+<!-- Kamila: przełącznik lat -->
+<div class="lata" id="lata"></div>
+<button class="przycisk" id="panelBtn">☰ Panel</button>
 </header>
-<main><div id="map" aria-label="Interaktywna mapa wskaźników"></div><aside>
- 
-<!-- Amelia: wybór warstwy i opis -->
-<section>
-<h2>Warstwa mapy</h2>
-<select id="layer" style="width:100%;padding:6px;font-size:15px">
-<option value="NDVI">NDVI – roślinność</option>
-<option value="NDBI">NDBI – zabudowa</option>
-<option value="MNDWI">MNDWI – woda</option>
-<option value="RGB">RGB – naturalne barwy</option>
-<!-- Kamila: warstwy atlasu -->
-<option value="KLASY">Pokrycie terenu – klasy</option>
-<option value="DEFICYT">Deficyt zieleni</option>
-<option value="PODCZERWIEN">Podczerwień (B5/B4/B3)</option>
-<option value="MIASTO">Kompozycja miejska (B6/B5/B4)</option>
-</select>
-<p id="explain" style="font-size:14px"></p>
-</section>
- 
-<!-- Amelia: legenda -->
+<div id="obszar">
+<div id="map" aria-label="Interaktywna mapa atlasu"></div>
+
+<!-- Kamila: pasek narzędzi – każdy przycisk otwiera zakładkę panelu -->
+<div class="narzedzia" id="narzedzia">
+<button data-otworz="warstwy">🗺<span>Warstwy</span></button>
+<button data-otworz="porownaj">⇆<span>Porównaj</span></button>
+<button data-otworz="problemy">⚠<span>Problemy regionu</span></button>
+<button data-otworz="analiza">📍<span>Analiza okolicy</span></button>
+<button data-otworz="statystyki">📊<span>Statystyki</span></button>
+<button data-otworz="siatka">▦<span>Siatka 1 km</span></button>
+</div>
+
+<!-- Kamila: pionowa linia suwaka porównania -->
+<div id="suwak" hidden><div class="uchwyt">⇆</div><span class="etykieta lewa"></span><span class="etykieta prawa"></span></div>
+
+<!-- Kamila: karta aktualnego problemu na mapie -->
+<div class="historia" id="historia" hidden></div>
+
+<!-- Amelia: legenda (teraz jako karta na mapie, zawsze widoczna) -->
+<div class="legenda" id="legendCard">
+<b id="legendTitle">Legenda</b>
 <section id="legend">
-<h2>Legenda</h2>
-<div id="ramp" style="height:16px;border-radius:4px;border:1px solid #9bb"></div>
-<div style="display:flex;justify-content:space-between;font-size:13px"><span>−1</span><span>0</span><span>1</span></div>
+<div id="ramp" style="height:14px;border-radius:4px;border:1px solid #9bb"></div>
+<div style="display:flex;justify-content:space-between;font-size:12px"><span id="legendMin"></span><span id="legendMid"></span><span id="legendMax"></span></div>
 </section>
- 
+<!-- Kamila: legenda kategorii (klasy, przejścia) -->
+<div id="classList"></div>
+</div>
+
+<!-- Kamila: wysuwany panel z zakładkami -->
+<aside id="panel">
+<div class="panel-gora"><b>Atlas – narzędzia</b><button class="zamknij" id="panelClose" aria-label="Zamknij panel">✕</button></div>
+<nav class="zakladki" id="zakladki">
+<button data-zakladka="warstwy">🗺 Warstwy</button>
+<button data-zakladka="porownaj">⇆ Porównaj</button>
+<button data-zakladka="problemy">⚠ Problemy</button>
+<button data-zakladka="analiza">📍 Analiza</button>
+<button data-zakladka="statystyki">📊 Statystyki</button>
+<button data-zakladka="siatka">▦ Siatka</button>
+</nav>
+<div class="tresc">
+
+<section data-zakladka="warstwy">
+<!-- Amelia: wybór warstwy i opis -->
+<h2>Warstwa mapy</h2>
+<select id="layer"></select>
+<p id="explain" class="opis"></p>
+
 <!-- Amelia: suwak przezroczystości -->
-<section>
-<h2>Przezroczystość</h2>
-<input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85" style="width:100%">
+<h3>Przezroczystość</h3>
+<input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85">
 <span id="opacityValue">85%</span>
-</section>
- 
-<!-- ------------------------------------------------------------ -->
 
-<!-- Kamila: legenda klas pokrycia terenu (widoczna dla warstwy KLASY) -->
-<section id="classLegend" hidden>
-<h2>Klasy pokrycia terenu</h2>
-<div id="classList" style="font-size:14px"></div>
+<!-- Kamila: podkład mapy -->
+<h3>Podkład</h3>
+<select id="basemap">
+<option value="jasny">Jasny</option>
+<option value="ciemny">Ciemny</option>
+<option value="satelita">Zdjęcie satelitarne (aktualne)</option>
+<option value="osm">OpenStreetMap</option>
+<option value="brak">Bez podkładu</option>
+</select>
+<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:14px"><input type="checkbox" id="labels" checked> Nazwy miejscowości nad mapą</label>
+
+<div class="karta opis" id="sceneInfo"></div>
 </section>
 
-<!-- Kamila: panel statystyk całego obszaru (dane z summary.json) -->
-<section id="stats">
+<!-- Kamila: zakładka porównania -->
+<section data-zakladka="porownaj">
+<h2>Suwak porównania</h2>
+<p class="opis">Na mapie pojawi się pionowa linia. Przeciągnij ją, żeby zobaczyć dwie wersje tego samego miejsca.</p>
+<div class="tryby"><label><input type="radio" name="tryb" value="lata" checked>2015 | 2024</label><label><input type="radio" name="tryb" value="warstwy">Dwie warstwy</label></div>
+<div id="trybLata"><h3>Warstwa w obu latach</h3><select id="cmpLayer"></select></div>
+<div id="trybWarstwy" hidden><h3>Lewa strona</h3><select id="cmpLeft"></select><h3>Prawa strona</h3><select id="cmpRight"></select>
+<p class="opis">Obie warstwy z roku wybranego na górze strony.</p></div>
+<button class="przycisk" id="cmpBtn" style="width:100%;margin-top:14px">⇆ Włącz suwak</button>
+<div class="karta opis"><b>Spróbuj:</b> zdjęcie 2015 | 2024 nad Pustynią Błędowską albo podczerwień | temperatura nad Parkiem Śląskim – widać, że roślinność chłodzi.</div>
+</section>
+
+<!-- Kamila: problemy regionu -->
+<section data-zakladka="problemy">
+<h2>Problemy regionu</h2>
+<p class="opis">Siedem miejsc, w których dane satelitarne pokazują problemy środowiskowe Górnego Śląska. Najgorętsze miejsce, największy ubytek zieleni i nowa woda zostały wyszukane automatycznie przez program.</p>
+<button class="przycisk" id="tourBtn" style="width:100%">▶ Odtwórz wycieczkę</button>
+<div id="problemList"></div>
+</section>
+
+<!-- Kamila: analiza okolicy -->
+<section data-zakladka="analiza">
+<h2>Analiza okolicy</h2>
+<p class="opis">Wybierz dowolne miejsce. Przeglądarka sama policzy, co jest w kole, i porówna 2015 z 2024.</p>
+<button class="przycisk" id="analyzeBtn" style="width:100%">📍 Wybierz miejsce na mapie</button>
+<h3>Promień: <span id="radiusValue">1 km</span></h3>
+<input id="radius" type="range" min="250" max="5000" step="250" value="1000">
+<div id="analyzeResult" class="opis">Kliknij przycisk, a potem dowolne miejsce na mapie – np. swoje osiedle.</div>
+</section>
+
+<!-- Kamila: statystyki obszaru -->
+<section data-zakladka="statystyki">
 <h2>Statystyki obszaru</h2>
-<div id="statsBody" style="font-size:14px">Wczytywanie…</div>
+<div id="statsBody" class="opis">Wczytywanie…</div>
+<h3>Czy zieleń chłodzi?</h3>
+<div id="scatter" class="opis">Wczytywanie wykresu…</div>
+<p class="opis">Każda kropka to kwadrat 1 km w 2024 r. Kliknij kropkę, żeby zobaczyć to miejsce na mapie. Chłodne kropki w lewym dolnym rogu to jeziora – nie mają zieleni, ale woda chłodzi.</p>
 </section>
 
-<!-- ------------------------------------------------------------ -->
- 
-<!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, suwak porównania dwóch warstw, wartości wskaźników po kliknięciu w mapę -->
- 
-<p id="state">Wczytywanie mapy…</p>
-</aside></main>
+<!-- Kamila: siatka 1 km -->
+<section data-zakladka="siatka">
+<h2>Siatka 1 km</h2>
+<p class="opis">Cały obszar podzielony na kwadraty 1 × 1 km. Kolor pokazuje wybraną miarę, a po najechaniu myszą widać dane kwadratu z obu lat.</p>
+<label style="display:flex;gap:8px;align-items:center;font-size:15px;margin:8px 0"><input type="checkbox" id="gridOn"> Pokaż siatkę na mapie</label>
+<select id="gridMetric">
+<option value="t24">Temperatura 2024 [°C]</option>
+<option value="a24">Przegrzanie 2024 (względem mediany) [°C]</option>
+<option value="z24">Zieleń 2024 [%]</option>
+<option value="b24">Zabudowa i grunt 2024 [%]</option>
+<option value="dz">Zmiana zieleni 2015 → 2024 [p.p.]</option>
+<option value="da">Zmiana przegrzania 2015 → 2024 [°C]</option>
+</select>
+<div id="gridRamp" style="height:12px;border-radius:4px;margin-top:10px;border:1px solid #9bb"></div>
+<div id="gridTicks" style="display:flex;justify-content:space-between;font-size:12px"></div>
+<div class="karta opis" id="gridTop"></div>
+</section>
+
+<!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, wartości wskaźników po kliknięciu w mapę -->
+
+<p id="state" class="opis">Wczytywanie mapy…</p>
+</div>
+</aside>
+</div>
+
 <script src="vendor/leaflet.js"></script><script>
 const cfg=__MAP_CONFIG__;
-const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17}).fitBounds(cfg.bounds);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
- 
-// Wspólna część: pokazuje jedną warstwę wynikową (domyślnie NDVI).
+const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17,zoomSnap:0.25}).fitBounds(cfg.bounds,{padding:[10,10]});
+
+// Kamila: podkłady mapy do wyboru (Esri, bez klucza API) i nazwy miejscowości nad warstwą danych
+const esri=s=>'https://server.arcgisonline.com/ArcGIS/rest/services/'+s+'/MapServer/tile/{z}/{y}/{x}';
+const esriAtr='Podkład: Esri, HERE, Garmin, © OpenStreetMap contributors';
+const podklady={
+  jasny:L.tileLayer(esri('Canvas/World_Light_Gray_Base'),{maxZoom:16,attribution:esriAtr}),
+  ciemny:L.tileLayer(esri('Canvas/World_Dark_Gray_Base'),{maxZoom:16,attribution:esriAtr}),
+  satelita:L.tileLayer(esri('World_Imagery'),{maxZoom:18,attribution:'Podkład: Esri, Maxar, Earthstar Geographics'}),
+  osm:L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'})
+};
+map.createPane('etykiety');
+map.getPane('etykiety').style.zIndex=450;              // nad kafelkami danych, pod wektorami
+map.getPane('etykiety').style.pointerEvents='none';
+const etykiety={
+  jasne:L.tileLayer(esri('Canvas/World_Light_Gray_Reference'),{pane:'etykiety',maxZoom:16}),
+  ciemne:L.tileLayer(esri('Canvas/World_Dark_Gray_Reference'),{pane:'etykiety',maxZoom:16})
+};
+let podklad=podklady.jasny.addTo(map), etykieta=etykiety.jasne.addTo(map);
+function ustawPodklad(){
+  const nazwa=document.querySelector('#basemap').value, nazwy=document.querySelector('#labels').checked;
+  if(podklad)map.removeLayer(podklad);
+  if(etykieta)map.removeLayer(etykieta);
+  podklad=podklady[nazwa]||null;
+  if(podklad)podklad.addTo(map).bringToBack();
+  etykieta=nazwy?(nazwa==='ciemny'||nazwa==='satelita'?etykiety.ciemne:etykiety.jasne):null;
+  if(etykieta)etykieta.addTo(map);
+}
+document.querySelector('#basemap').addEventListener('change',ustawPodklad);
+document.querySelector('#labels').addEventListener('change',ustawPodklad);
+
+// Wspólna część: pokazuje jedną warstwę wynikową.
 // showLayer(nazwa) zmienia warstwę, a funkcje dodane do onLayerChange
 // są wywoływane po każdej zmianie (np. żeby odświeżyć legendę).
-let overlay, currentLayer='NDVI', currentOpacity=0.85;
+// Kamila: warstwy są w dwóch wersjach (2015 i 2024) albo w folderze „zmiany”.
+let overlay, currentLayer='TEMP', currentOpacity=0.85, rok='2024';
 const onLayerChange=[];
+function folderWarstwy(name){return cfg.layers[name].group==='zmiany'?'zmiany':rok;}
+function kafelki(folder,name){
+  return L.tileLayer('tiles/'+folder+'/'+name+'/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:currentOpacity,attribution:'Landsat 8 / USGS, Planetary Computer'});
+}
 function showLayer(name){
   if(overlay)map.removeLayer(overlay);
   currentLayer=name;
-  overlay=L.tileLayer('tiles/'+name+'/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:currentOpacity,attribution:'Landsat 8 / USGS'}).addTo(map);
-  overlay.on('load',()=>document.querySelector('#state').textContent='Warstwa '+name+' gotowa.');
+  overlay=kafelki(folderWarstwy(name),name).addTo(map);
+  overlay.on('load',()=>document.querySelector('#state').textContent='Warstwa '+cfg.layers[name].label+' gotowa.');
   overlay.on('tileerror',()=>document.querySelector('#state').textContent='Nie udało się odczytać kafelka.');
   onLayerChange.forEach(f=>f(name));
 }
- 
+
 // Granica obszaru (AOI).
-fetch('aoi.geojson').then(r=>r.json()).then(g=>L.geoJSON(g,{style:{color:'#143843',weight:1.2,fill:false},interactive:false}).addTo(map));
- 
-// Amelia: opisy warstw i przełącznik
-const opisy={
-  NDVI:'NDVI = (B5 − B4) / (B5 + B4). Wysokie wartości (zielone) oznaczają roślinność.',
-  NDBI:'NDBI = (B6 − B5) / (B6 + B5). Dodatnie wartości mogą wskazywać zabudowę lub odsłoniętą glebę.',
-  MNDWI:'MNDWI = (B3 − B6) / (B3 + B6). Dodatnie wartości wskazują wody powierzchniowe.',
-  RGB:'Kompozycja w naturalnych barwach: kanały B4 / B3 / B2.'
-};
+fetch('aoi.geojson').then(r=>r.json()).then(g=>L.geoJSON(g,{style:{color:'#0f2a33',weight:1.5,fill:false,dashArray:'4 4'},interactive:false}).addTo(map));
+
+// Amelia: opisy warstw i przełącznik (Kamila: lista warstw i opisy pochodzą z obliczeń, cfg.layers)
+const opisy=Object.fromEntries(Object.entries(cfg.layers).map(([k,v])=>[k,v.description]));
 const wybor=document.querySelector('#layer');
+wybor.innerHTML=[['rok','Warstwy wybranego roku'],['zmiany','Zmiany 2015 → 2024']].map(([g,t])=>
+  '<optgroup label="'+t+'">'+Object.entries(cfg.layers).filter(([k,v])=>v.group===g).map(([k,v])=>'<option value="'+k+'">'+v.label+'</option>').join('')+'</optgroup>').join('');
+wybor.value=currentLayer;
 wybor.addEventListener('change',()=>showLayer(wybor.value));
 onLayerChange.push(name=>{document.querySelector('#explain').textContent=opisy[name]||'';});
- 
-// ------------------------------------------------------------
- 
-// Amelia: legenda (pasek kolorów dla wybranej warstwy, ukryty dla RGB)
+
+// Amelia: legenda (pasek kolorów dla wybranej warstwy; Kamila: zakres i jednostka z cfg.layers)
 onLayerChange.push(name=>{
-  const ramp=cfg.ramps&&cfg.ramps[name];
-  document.querySelector('#legend').hidden=!ramp;
-  if(ramp)document.querySelector('#ramp').style.background='linear-gradient(to right,'+ramp.join(',')+')';
+  const w=cfg.layers[name];
+  document.querySelector('#legendTitle').textContent=w.label+(w.group==='rok'?' • '+rok:'');
+  document.querySelector('#legend').hidden=!w.ramp;
+  if(w.ramp){
+    document.querySelector('#ramp').style.background='linear-gradient(to right,'+w.ramp.join(',')+')';
+    const f=v=>(Math.round(v*100)/100).toString().replace('.',',').replace('-','−')+(w.unit&&w.unit!=='Δ NDVI'?' '+w.unit:'');
+    document.querySelector('#legendMin').textContent=f(w.min);
+    document.querySelector('#legendMid').textContent=f((w.min+w.max)/2);
+    document.querySelector('#legendMax').textContent=f(w.max);
+  }
 });
- 
+
 // Amelia: suwak przezroczystości i skala mapy
 document.querySelector('#opacity').addEventListener('input',e=>{
   currentOpacity=Number(e.target.value);
   if(overlay)overlay.setOpacity(currentOpacity);
   document.querySelector('#opacityValue').textContent=Math.round(currentOpacity*100)+'%';
 });
-L.control.scale({imperial:false}).addTo(map);
+L.control.scale({imperial:false,position:'bottomright'}).addTo(map);
 
-// ------------------------------------------------------------
-
-// Kamila: opisy nowych warstw atlasu
-Object.assign(opisy,{
-  KLASY:'Klasyfikacja progowa: woda (MNDWI > 0), gęsta roślinność (NDVI ≥ 0.7), roślinność niska (0.4 ≤ NDVI < 0.7), zabudowa i odkryty grunt (NDVI < 0.4). Uproszczenie bez weryfikacji terenowej.',
-  DEFICYT:'Deficyt zieleni = NDBI − NDVI. Ciemnozielone: dużo roślinności. Jasne, żółtawe: zabudowa i mało zieleni – miejsca, gdzie przydałoby się więcej drzew (np. centrum i Nowa Huta).',
-  PODCZERWIEN:'Fałszywe barwy B5/B4/B3: zdrowa roślinność jest czerwona, zabudowa szaroniebieska, woda ciemna.',
-  MIASTO:'Fałszywe barwy B6/B5/B4: roślinność jest zielona, zabudowa i odkryty grunt różowofioletowe, woda ciemna.'
+// Kamila: legenda kategorii (klasy pokrycia i przejścia klas) oraz komplet, gdy warstwa to zdjęcie
+onLayerChange.push(name=>{
+  const w=cfg.layers[name], lista=w.kind==='classes'?cfg.classes:w.kind==='transitions'?cfg.transitions:null;
+  document.querySelector('#classList').innerHTML=lista?lista.map(c=>
+    '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:14px;height:14px;border-radius:3px;flex:none;background:'+c.color+'"></span>'+c.name+'</div>').join(''):
+    (w.kind==='composite'?'<span class="opis">'+w.description+'</span>':'');
 });
 
-// Kamila: legenda klas (kolorowe kwadraty z nazwami, tylko dla warstwy KLASY)
-document.querySelector('#classList').innerHTML=cfg.classes.map(c=>
-  '<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'+
-  '<span style="width:16px;height:16px;border-radius:3px;flex:none;background:'+c.color+'"></span>'+c.name+'</div>').join('');
-onLayerChange.push(name=>{document.querySelector('#classLegend').hidden=name!=='KLASY';});
+// Kamila: przełącznik lat 2015 / 2024
+const lata=document.querySelector('#lata');
+lata.innerHTML=Object.keys(cfg.years).map(y=>'<button data-rok="'+y+'"'+(y===rok?' class="on"':'')+'>'+y+'</button>').join('');
+const onYearChange=[];
+function ustawRok(y){
+  rok=y;
+  lata.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.rok===y));
+  showLayer(currentLayer);
+  onYearChange.forEach(f=>f(y));
+}
+lata.addEventListener('click',e=>{if(e.target.dataset.rok)ustawRok(e.target.dataset.rok);});
+document.querySelector('#sceneInfo').innerHTML='<b>Dane</b><br>'+Object.entries(cfg.years).map(([y,s])=>y+': '+s.id+' ('+s.date+')').join('<br>')+
+  '<br>Źródło: USGS Landsat 8 Collection 2 Level-2, archiwum Microsoft Planetary Computer.';
 
-// Kamila: panel statystyk – wykres słupkowy udziału klas i tabela średnich wskaźników
-fetch('summary.json').then(r=>r.json()).then(s=>{
-  const km2=s.classes.reduce((sum,c)=>sum+c.km2,0);
-  const bars=s.classes.map(c=>
-    '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;gap:6px">'+
-    '<span>'+c.name.split(' (')[0]+'</span><b>'+c.percent.toFixed(1)+'%</b></div>'+
-    '<div style="background:#dde5e4;border-radius:3px;height:10px">'+
-    '<div style="width:'+c.percent+'%;min-width:2px;height:100%;border-radius:3px;background:'+c.color+'"></div></div>'+
-    '<div style="font-size:12px;color:#5b7480">'+c.km2.toLocaleString('pl-PL')+' km²</div></div>').join('');
-  const rows=Object.entries(s.indices).map(([name,v])=>
-    '<tr><td>'+name+'</td><td style="text-align:right">'+v.mean.toFixed(3)+'</td><td style="text-align:right">'+v.median.toFixed(3)+'</td></tr>').join('');
-  document.querySelector('#statsBody').innerHTML=
-    '<p style="margin:0 0 6px">Obszar z ważnymi danymi: <b>'+Math.round(km2).toLocaleString('pl-PL')+' km²</b> '+
-    '('+s.valid_pixels.toLocaleString('pl-PL')+' pikseli 30 × 30 m)</p>'+bars+
-    '<table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:13px">'+
-    '<tr><th style="text-align:left">Wskaźnik</th><th style="text-align:right">średnia</th><th style="text-align:right">mediana</th></tr>'+rows+'</table>';
-}).catch(()=>{document.querySelector('#statsBody').textContent='Statystyki widać po otwarciu strony przez serwer HTTP.';});
- 
-// TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora, suwaka porównania i kliknięcia w mapę
- 
+// Kamila: wysuwany panel i zakładki
+const onTabOpen={};
+function otworzZakladke(nazwa){
+  document.body.classList.add('panel-otwarty');
+  document.querySelectorAll('#zakladki button').forEach(b=>b.classList.toggle('on',b.dataset.zakladka===nazwa));
+  document.querySelectorAll('.tresc section[data-zakladka]').forEach(s=>s.classList.toggle('on',s.dataset.zakladka===nazwa));
+  document.querySelectorAll('#narzedzia button').forEach(b=>b.classList.toggle('on',b.dataset.otworz===nazwa));
+  if(onTabOpen[nazwa])onTabOpen[nazwa]();
+}
+function zamknijPanel(){
+  document.body.classList.remove('panel-otwarty');
+  document.querySelectorAll('#narzedzia button').forEach(b=>b.classList.remove('on'));
+}
+document.querySelector('#zakladki').addEventListener('click',e=>{const b=e.target.closest('button');if(b)otworzZakladke(b.dataset.zakladka);});
+document.querySelector('#narzedzia').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  if(b.classList.contains('on'))zamknijPanel(); else otworzZakladke(b.dataset.otworz);
+});
+document.querySelector('#panelBtn').addEventListener('click',()=>document.body.classList.contains('panel-otwarty')?zamknijPanel():otworzZakladke('warstwy'));
+document.querySelector('#panelClose').addEventListener('click',zamknijPanel);
+['narzedzia','legendCard','panel'].forEach(id=>{const el=document.getElementById(id);L.DomEvent.disableClickPropagation(el);L.DomEvent.disableScrollPropagation(el);});
+
+// Kamila: suwak porównania – dwie warstwy kafelków przycięte pionową linią (CSS clip)
+const porownanie={aktywne:false,lewa:null,prawa:null,x:0.5,tryb:'lata'};
+const suwak=document.querySelector('#suwak'), cmpBtn=document.querySelector('#cmpBtn');
+function przytnij(){
+  if(!porownanie.aktywne)return;
+  const nw=map.containerPointToLayerPoint([0,0]), se=map.containerPointToLayerPoint(map.getSize());
+  const cx=nw.x+map.getSize().x*porownanie.x;
+  porownanie.lewa.getContainer().style.clip='rect('+[nw.y,cx,se.y,nw.x].join('px,')+'px)';
+  porownanie.prawa.getContainer().style.clip='rect('+[nw.y,se.x,se.y,cx].join('px,')+'px)';
+  suwak.style.left=(porownanie.x*100)+'%';
+}
+function wlaczPorownanie(lewa,prawa){              // lewa, prawa: {folder, name, etykieta}
+  wylaczPorownanie();
+  if(overlay)map.removeLayer(overlay);
+  porownanie.lewa=kafelki(lewa.folder,lewa.name).addTo(map);
+  porownanie.prawa=kafelki(prawa.folder,prawa.name).addTo(map);
+  porownanie.aktywne=true; suwak.hidden=false;
+  suwak.querySelector('.lewa').textContent='◀ '+lewa.etykieta;
+  suwak.querySelector('.prawa').textContent=prawa.etykieta+' ▶';
+  cmpBtn.textContent='✕ Wyłącz suwak';
+  przytnij();
+}
+function wylaczPorownanie(){
+  if(!porownanie.aktywne)return;
+  map.removeLayer(porownanie.lewa); map.removeLayer(porownanie.prawa);
+  porownanie.aktywne=false; suwak.hidden=true;
+  cmpBtn.textContent='⇆ Włącz suwak';
+  if(overlay&&!map.hasLayer(overlay))overlay.addTo(map);
+}
+function pokazTrybFormularza(tryb){               // formularz w panelu pokazuje aktualny tryb
+  document.querySelector('input[name=tryb][value='+tryb+']').checked=true;
+  document.querySelector('#trybLata').hidden=tryb!=='lata'; document.querySelector('#trybWarstwy').hidden=tryb==='lata';
+}
+function porownajLata(name){                       // ta sama warstwa: 2015 po lewej, 2024 po prawej
+  porownanie.tryb='lata'; pokazTrybFormularza('lata'); document.querySelector('#cmpLayer').value=name;
+  wybor.value=name; showLayer(name);
+  const lata=Object.keys(cfg.years);
+  wlaczPorownanie({folder:lata[0],name,etykieta:lata[0]},{folder:lata[1],name,etykieta:lata[1]});
+}
+function porownajWarstwy(lewa,prawa){              // dwie różne warstwy z jednego roku
+  porownanie.tryb='warstwy'; pokazTrybFormularza('warstwy');
+  document.querySelector('#cmpLeft').value=lewa; document.querySelector('#cmpRight').value=prawa;
+  wybor.value=prawa; showLayer(prawa);
+  const opis=n=>cfg.layers[n].label+(cfg.layers[n].group==='rok'?' '+rok:'');
+  wlaczPorownanie({folder:folderWarstwy(lewa),name:lewa,etykieta:opis(lewa)},{folder:folderWarstwy(prawa),name:prawa,etykieta:opis(prawa)});
+}
+map.on('move zoom zoomend viewreset resize',przytnij);
+suwak.addEventListener('pointerdown',e=>{
+  suwak.setPointerCapture(e.pointerId); map.dragging.disable();
+  const ruch=ev=>{const r=map.getContainer().getBoundingClientRect(); porownanie.x=Math.min(.98,Math.max(.02,(ev.clientX-r.left)/r.width)); przytnij();};
+  const koniec=()=>{suwak.removeEventListener('pointermove',ruch); suwak.removeEventListener('pointerup',koniec); map.dragging.enable();};
+  suwak.addEventListener('pointermove',ruch); suwak.addEventListener('pointerup',koniec);
+});
+L.DomEvent.disableClickPropagation(suwak);
+// formularz w panelu
+const opcjeWarstw=grupy=>Object.entries(cfg.layers).filter(([k,v])=>grupy.includes(v.group)).map(([k,v])=>'<option value="'+k+'">'+v.label+'</option>').join('');
+document.querySelector('#cmpLayer').innerHTML=opcjeWarstw(['rok']);
+document.querySelector('#cmpLeft').innerHTML=opcjeWarstw(['rok','zmiany']);
+document.querySelector('#cmpRight').innerHTML=opcjeWarstw(['rok','zmiany']);
+document.querySelector('#cmpLayer').value='RGB';
+document.querySelector('#cmpLeft').value='PODCZERWIEN';
+document.querySelector('#cmpRight').value='TEMP';
+function porownajZFormularza(){
+  if(document.querySelector('input[name=tryb]:checked').value==='lata')porownajLata(document.querySelector('#cmpLayer').value);
+  else porownajWarstwy(document.querySelector('#cmpLeft').value,document.querySelector('#cmpRight').value);
+}
+document.querySelectorAll('input[name=tryb]').forEach(r=>r.addEventListener('change',()=>{
+  const lataOn=document.querySelector('input[name=tryb]:checked').value==='lata';
+  document.querySelector('#trybLata').hidden=!lataOn; document.querySelector('#trybWarstwy').hidden=lataOn;
+  if(porownanie.aktywne)porownajZFormularza();       // przełącz tryb od razu
+}));
+cmpBtn.addEventListener('click',()=>porownanie.aktywne?wylaczPorownanie():porownajZFormularza());
+['cmpLayer','cmpLeft','cmpRight'].forEach(id=>document.getElementById(id).addEventListener('change',()=>{if(porownanie.aktywne)porownajZFormularza();}));
+wybor.addEventListener('change',wylaczPorownanie);        // zwykły wybór warstwy kończy porównanie
+onYearChange.push(()=>{if(porownanie.aktywne&&porownanie.tryb==='warstwy')porownajZFormularza();});
+document.querySelector('#opacity').addEventListener('input',()=>{if(porownanie.aktywne){porownanie.lewa.setOpacity(currentOpacity);porownanie.prawa.setOpacity(currentOpacity);}});
+
+// Kamila: problemy regionu – wycieczka po miejscach wyszukanych w danych (cfg.stories z Pythona)
+const historia=document.querySelector('#historia');
+const podsumowanie=fetch('summary.json').then(r=>r.json()).catch(()=>null);
+let koloHistorii=null, aktualnaHistoria=-1;
+const liczba=(x,d=1)=>x.toFixed(d).replace('.',',').replace('-','−');
+function zakonczHistorie(){
+  historia.hidden=true; aktualnaHistoria=-1;
+  if(koloHistorii){map.removeLayer(koloHistorii);koloHistorii=null;}
+  document.querySelectorAll('.problem').forEach(p=>p.classList.remove('on'));
+}
+function pokazHistorie(i){
+  const lista=cfg.stories, n=lista.length;
+  aktualnaHistoria=i;
+  if(koloHistorii){map.removeLayer(koloHistorii);koloHistorii=null;}
+  document.querySelectorAll('.problem').forEach((p,k)=>p.classList.toggle('on',k===i));
+  historia.hidden=false;
+  const nawigacja='<div class="nawigacja"><button data-k="'+(i-1)+'"'+(i===0?' disabled':'')+'>◀ Wstecz</button>'+
+    (i<n?'<button class="glowny" data-k="'+(i+1)+'">'+(i===n-1?'Podsumowanie ▶':'Dalej ▶')+'</button>':'')+'<button data-k="x">✕</button></div>';
+  if(i<n){
+    const s=lista[i];
+    if(s.year!==rok)ustawRok(s.year);
+    if(s.compare){s.compare.mode==='lata'?porownajLata(s.compare.layer):porownajWarstwy(s.compare.left,s.compare.right);}
+    else{wylaczPorownanie(); wybor.value=s.layer; showLayer(s.layer);}
+    map.flyTo([s.lat,s.lon],s.zoom,{duration:2});
+    koloHistorii=L.circle([s.lat,s.lon],{radius:s.radius,color:'#ffffff',weight:3,dashArray:'8 6',fill:false,interactive:false}).addTo(map);
+    historia.innerHTML='<div class="nr">Problem '+(i+1)+' z '+n+'</div><h3>'+s.title+'</h3><p>'+s.text+'</p>'+
+      '<div class="fakty">'+s.facts.map(f=>'<span>'+f[0]+'<b>'+f[1]+'</b></span>').join('')+'</div>'+
+      (s.compare?'<p class="opis" style="margin-top:6px">⇆ Przeciągnij biały suwak na mapie, żeby porównać.</p>':'')+nawigacja;
+  }else{
+    wylaczPorownanie(); ustawRok('2024'); wybor.value='TEMP'; showLayer('TEMP');
+    map.flyToBounds(cfg.bounds,{duration:2});
+    const c=cfg.correlation;
+    historia.innerHTML='<div class="nr">Podsumowanie</div><h3>Zieleń to klimatyzacja regionu</h3>'+
+      '<p>W '+c.cells+' kwadratach 1 km temperatura powierzchni spada średnio o <b>'+liczba(-c.slope_per_10pp)+' °C</b> na każde 10 punktów procentowych zieleni (korelacja r = '+liczba(c.r,2)+'). '+
+      'Najgorętsze są centra miast, przemysł i odsłonięty piasek, najchłodniejsze – lasy i jeziora.</p><div class="fakty" id="faktyPodsumowania"></div>'+nawigacja;
+    podsumowanie.then(s=>{
+      const box=document.querySelector('#faktyPodsumowania'); if(!s||!box)return;
+      const t=Object.fromEntries(s.transitions.map(x=>[x.name,x.km2]));
+      box.innerHTML='<span>Średnio 2024<b>'+liczba(s.years['2024'].indices.TEMP.mean)+' °C</b></span>'+
+        '<span>Ubytek zieleni<b>'+liczba(t['Ubytek zieleni'],0)+' km²</b></span>'+
+        '<span>Przybytek zieleni<b>'+liczba(t['Przybytek zieleni'],0)+' km²</b></span>'+
+        '<span>Nowa woda<b>'+liczba(t['Nowa woda'])+' km²</b></span>';
+    });
+  }
+  historia.querySelectorAll('.nawigacja button').forEach(b=>b.onclick=()=>b.dataset.k==='x'?zakonczHistorie():pokazHistorie(Number(b.dataset.k)));
+}
+document.querySelector('#problemList').innerHTML=cfg.stories.map((s,i)=>
+  '<div class="problem" data-i="'+i+'"><span class="num">'+(i+1)+'</span><div><b>'+s.title+'</b><small>'+s.lead+'</small></div></div>').join('');
+document.querySelector('#problemList').addEventListener('click',e=>{const p=e.target.closest('.problem');if(p)pokazHistorie(Number(p.dataset.i));});
+document.querySelector('#tourBtn').addEventListener('click',()=>{if(window.innerWidth<700)zamknijPanel(); pokazHistorie(0);});
+L.DomEvent.disableClickPropagation(historia); L.DomEvent.disableScrollPropagation(historia);
+
+// Kamila: analiza okolicy – piksele z rastrów analiza_2015.png i analiza_2024.png
+// (R = klasa, G = (NDVI + 1) · 127,5, B = temperatura · 4) liczone w kole o wybranym promieniu
+let trybAnalizy=false, koloAnalizy=null, srodekAnalizy=null;
+const daneAnalizy={};
+function wczytajPiksele(y){
+  if(daneAnalizy[y])return Promise.resolve(daneAnalizy[y]);
+  return new Promise((ok,blad)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+      const ctx=c.getContext('2d'); ctx.drawImage(img,0,0);
+      daneAnalizy[y]=ctx.getImageData(0,0,img.width,img.height).data; ok(daneAnalizy[y]);
+    };
+    img.onerror=blad; img.src=cfg.probe[y].url;
+  });
+}
+function statystykiKola(y,punkt,promien){
+  const p=cfg.probe[y], d=daneAnalizy[y], [[s,w],[n,e]]=p.bounds, dx=(e-w)/p.width, dy=(n-s)/p.height;
+  const mLat=110540, mLng=111320*Math.cos(punkt.lat*Math.PI/180);         // metry na stopień
+  const x0=Math.max(0,Math.floor((punkt.lng-promien/mLng-w)/dx)), x1=Math.min(p.width-1,Math.ceil((punkt.lng+promien/mLng-w)/dx));
+  const y0=Math.max(0,Math.floor((n-punkt.lat-promien/mLat)/dy)), y1=Math.min(p.height-1,Math.ceil((n-punkt.lat+promien/mLat)/dy));
+  const licz=[0,0,0,0,0]; let ndvi=0, temp=0, wKole=0;
+  for(let yy=y0;yy<=y1;yy++)for(let xx=x0;xx<=x1;xx++){
+    const lng=w+(xx+.5)*dx, lat=n-(yy+.5)*dy;
+    if(Math.hypot((lng-punkt.lng)*mLng,(lat-punkt.lat)*mLat)>promien)continue;
+    wKole++;
+    const i=(yy*p.width+xx)*4;
+    if(!d[i])continue;                                                      // brak danych
+    licz[d[i]]++; ndvi+=d[i+1]/127.5-1; temp+=d[i+2]/4;
+  }
+  const razem=licz[1]+licz[2]+licz[3]+licz[4];
+  if(!razem)return null;
+  return {udzial:[0,1,2,3,4].map(k=>100*licz[k]/razem), zielen:100*(licz[2]+licz[3])/razem,
+          ndvi:ndvi/razem, temp:temp/razem, pokrycie:razem/wKole};
+}
+function pierscien(udzial,podpis){                  // wykres pierścieniowy SVG (obwód = 100)
+  let suma=0;
+  return '<svg viewBox="0 0 42 42" width="104" height="104"><circle cx="21" cy="21" r="15.915" fill="none" stroke="#dde5e4" stroke-width="7"/>'+
+    cfg.classes.map(c=>{const u=udzial[c.id], s='<circle cx="21" cy="21" r="15.915" fill="none" stroke="'+c.color+'" stroke-width="7" stroke-dasharray="'+u+' '+(100-u)+'" stroke-dashoffset="'+(125-suma)+'"/>'; suma+=u; return s;}).join('')+
+    '<text x="21" y="23.5" text-anchor="middle" font-size="7" font-weight="700" fill="#173541">'+podpis+'</text></svg>';
+}
+function analizuj(){
+  if(!srodekAnalizy)return;
+  const promien=Number(document.querySelector('#radius').value), wynik=document.querySelector('#analyzeResult');
+  if(koloAnalizy)map.removeLayer(koloAnalizy);
+  koloAnalizy=L.circle(srodekAnalizy,{radius:promien,color:'#e4572e',weight:3,fillOpacity:.06,dashArray:'8 6',interactive:false}).addTo(map);
+  const lata=Object.keys(cfg.years);
+  Promise.all([...lata.map(wczytajPiksele),podsumowanie]).then(([, ,sum])=>{
+    const [a,b]=lata.map(y=>statystykiKola(y,srodekAnalizy,promien));
+    if(!a||!b){wynik.textContent='Tu nie ma danych – wybierz miejsce wewnątrz przerywanej ramki.';return;}
+    const zmiana=(x,y,d,j,lepiejWiecej)=>{const r=y-x, kl=Math.abs(r)<Math.pow(10,-d)/2?'':((r>0)===lepiejWiecej?'plus':'minus');
+      return '<td>'+liczba(x,d)+j+'</td><td>'+liczba(y,d)+j+'</td><td class="'+kl+'">'+(r>0?'+':'')+liczba(r,d)+'</td>';};
+    const przegrzanie=sum?b.temp-sum.years[lata[1]].indices.TEMP.median:null;
+    wynik.style.color='var(--tekst)';
+    wynik.innerHTML='<div class="dwa"><div><b>'+lata[0]+'</b>'+pierscien(a.udzial,Math.round(a.zielen)+'%')+'</div><div><b>'+lata[1]+'</b>'+pierscien(b.udzial,Math.round(b.zielen)+'%')+'</div></div>'+
+      '<p class="opis" style="text-align:center;margin:0">w środku: udział zieleni</p>'+
+      '<table class="zmiany"><tr><th></th><th>'+lata[0]+'</th><th>'+lata[1]+'</th><th>zmiana</th></tr>'+
+      '<tr><td>Zieleń</td>'+zmiana(a.zielen,b.zielen,0,'%',true)+'</tr>'+
+      '<tr><td>Zabudowa i grunt</td>'+zmiana(a.udzial[4],b.udzial[4],0,'%',false)+'</tr>'+
+      '<tr><td>Woda</td>'+zmiana(a.udzial[1],b.udzial[1],1,'%',true)+'</tr>'+
+      '<tr><td>NDVI</td>'+zmiana(a.ndvi,b.ndvi,2,'',true)+'</tr>'+
+      '<tr><td>Temperatura</td>'+zmiana(a.temp,b.temp,1,' °C',false)+'</tr></table>'+
+      (przegrzanie!==null?'<div class="karta" style="margin-top:12px">W '+lata[1]+' r. to miejsce było <b>'+(przegrzanie>=0?'o '+liczba(przegrzanie)+' °C cieplejsze':'o '+liczba(-przegrzanie)+' °C chłodniejsze')+'</b> niż typowe miejsce w regionie (mediana '+liczba(sum.years[lata[1]].indices.TEMP.median)+' °C).</div>':'')+
+      '<p class="opis">Koło '+liczba(Math.PI*promien*promien/1e6,2)+' km²'+(b.pokrycie<.95?' • dane dla '+Math.round(100*b.pokrycie)+'% koła':'')+'. Temperatury z dwóch różnych dni – porównuj raczej przegrzanie niż surowe °C.</p>';
+  }).catch(()=>{wynik.textContent='Analiza działa po otwarciu strony przez serwer HTTP.';});
+}
+const analyzeBtn=document.querySelector('#analyzeBtn');
+function ustawTrybAnalizy(on){
+  trybAnalizy=on; map.getContainer().style.cursor=on?'crosshair':'';
+  analyzeBtn.textContent=on?'✕ Anuluj – kliknij miejsce na mapie':(srodekAnalizy?'📍 Wybierz inne miejsce':'📍 Wybierz miejsce na mapie');
+}
+analyzeBtn.addEventListener('click',()=>ustawTrybAnalizy(!trybAnalizy));
+map.on('click',e=>{
+  if(!trybAnalizy)return;
+  e.analiza=true;                 // znacznik dla innych obsług kliknięcia: to kliknięcie należy do analizy
+  srodekAnalizy=e.latlng; ustawTrybAnalizy(false); analizuj();
+});
+document.querySelector('#radius').addEventListener('input',e=>{
+  const m=Number(e.target.value);
+  document.querySelector('#radiusValue').textContent=m>=1000?liczba(m/1000,m%1000?2:0).replace(/,?0+$/,'')+' km':m+' m';
+  analizuj();
+});
+
+// Kamila: statystyki obszaru – słupki klas 2015 vs 2024, najważniejsze liczby i wykres rozrzutu
+const siatkaDane=fetch('siatka.geojson').then(r=>r.json());
+let zaznaczonyKwadrat=null;
+function pokazStatystyki(){
+  podsumowanie.then(s=>{
+    if(!s)return;
+    const lata=Object.keys(s.years), km2=s.years[lata[1]].classes.reduce((a,c)=>a+c.km2,0);
+    const t=Object.fromEntries(s.transitions.map(x=>[x.name,x.km2]));
+    document.querySelector('#statsBody').innerHTML=
+      '<div class="liczby">'+
+      '<div>Obszar atlasu<b>'+liczba(km2,0)+' km²</b></div>'+
+      lata.map(y=>'<div>Śr. temperatura '+y+'<b>'+liczba(s.years[y].indices.TEMP.mean)+' °C</b></div>').join('')+
+      '<div>Najgorętsze 2% obszaru '+lata[1]+'<b>> '+liczba(s.years[lata[1]].indices.TEMP.p98)+' °C</b></div>'+
+      '<div>Zieleń zamieniona w grunt/zabudowę<b>'+liczba(t['Ubytek zieleni'],0)+' km²</b></div>'+
+      '<div>Nowa woda<b>'+liczba(t['Nowa woda'])+' km²</b></div></div>'+
+      '<h3>Pokrycie terenu</h3>'+cfg.classes.map(c=>'<div style="font-weight:600;font-size:13px;margin-top:8px">'+c.name+'</div><div class="slupki">'+
+        lata.map(y=>{const k=s.years[y].classes.find(x=>x.id===c.id);
+          return '<div class="wiersz"><span>'+y+'</span><div class="tor"><div style="width:'+k.percent+'%;background:'+c.color+';opacity:'+(y===lata[0]?.55:1)+'"></div></div><b>'+liczba(k.percent)+'%</b></div>';}).join('')+'</div>').join('')+
+      '<p class="opis">Więcej zieleni w 2024 r. to głównie efekt suszy w sierpniu 2015 r. i innego terminu żniw – porównuj ostrożnie.</p>';
+  });
+  siatkaDane.then(g=>{
+    const W=350,H=260,m={l:42,r:10,t:10,b:36}, c=cfg.correlation;
+    const pkt=g.features.map(f=>({z:f.properties.z24,t:f.properties.t24,f}));
+    const tMin=Math.floor(Math.min(...pkt.map(p=>p.t))), tMax=Math.ceil(Math.max(...pkt.map(p=>p.t)));
+    const X=z=>m.l+z/100*(W-m.l-m.r), Y=t=>H-m.b-(t-tMin)/(tMax-tMin)*(H-m.t-m.b);
+    const ramp=cfg.layers.TEMP.ramp, kolor=t=>ramp[Math.max(0,Math.min(ramp.length-1,Math.round((t-cfg.layers.TEMP.min)/(cfg.layers.TEMP.max-cfg.layers.TEMP.min)*(ramp.length-1))))];
+    let svg='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="background:#fff;border:1px solid var(--linia);border-radius:12px">';
+    for(let z=0;z<=100;z+=25)svg+='<line x1="'+X(z)+'" x2="'+X(z)+'" y1="'+m.t+'" y2="'+(H-m.b)+'" stroke="#eef2f1"/><text x="'+X(z)+'" y="'+(H-m.b+14)+'" font-size="10" text-anchor="middle" fill="#5b7480">'+z+'%</text>';
+    for(let t=Math.ceil(tMin/5)*5;t<=tMax;t+=5)svg+='<line x1="'+m.l+'" x2="'+(W-m.r)+'" y1="'+Y(t)+'" y2="'+Y(t)+'" stroke="#eef2f1"/><text x="'+(m.l-5)+'" y="'+(Y(t)+3)+'" font-size="10" text-anchor="end" fill="#5b7480">'+t+'°</text>';
+    svg+=pkt.map((p,i)=>'<circle class="pkt" data-i="'+i+'" cx="'+X(p.z).toFixed(1)+'" cy="'+Y(p.t).toFixed(1)+'" r="2.3" fill="'+kolor(p.t)+'" fill-opacity=".75"><title>Zieleń '+liczba(p.z,0)+'% • '+liczba(p.t)+' °C</title></circle>').join('');
+    const yA=c.intercept, yB=c.intercept+c.slope_per_10pp*10;
+    svg+='<line x1="'+X(0)+'" y1="'+Y(yA)+'" x2="'+X(100)+'" y2="'+Y(yB)+'" stroke="#0f2a33" stroke-width="2.5" stroke-dasharray="6 4"/>';
+    svg+='<text x="'+(W-m.r)+'" y="'+(m.t+12)+'" font-size="11" text-anchor="end" font-weight="700" fill="#0f2a33">r = '+liczba(c.r,2)+' • '+liczba(c.slope_per_10pp)+' °C na +10% zieleni</text>';
+    svg+='<text x="'+((W+m.l)/2)+'" y="'+(H-4)+'" font-size="11" text-anchor="middle" fill="#173541">udział zieleni w kwadracie</text>';
+    svg+='<text x="12" y="'+(H/2)+'" font-size="11" text-anchor="middle" fill="#173541" transform="rotate(-90 12 '+(H/2)+')">temperatura powierzchni</text></svg>';
+    const box=document.querySelector('#scatter'); box.innerHTML=svg;
+    box.querySelector('svg').addEventListener('click',e=>{
+      const k=e.target.closest('circle.pkt'); if(!k)return;
+      const f=pkt[Number(k.dataset.i)].f, kwadrat=L.geoJSON(f).getBounds();
+      if(zaznaczonyKwadrat)map.removeLayer(zaznaczonyKwadrat);
+      zaznaczonyKwadrat=L.rectangle(kwadrat,{color:'#e4572e',weight:3,fill:false,interactive:false}).addTo(map);
+      if(rok!=='2024')ustawRok('2024');
+      map.flyToBounds(kwadrat.pad(1.5),{duration:1.5});
+    });
+  });
+}
+onTabOpen.statystyki=pokazStatystyki;
+
+// Kamila: siatka 1 km – kwadraty pokolorowane wybraną miarą, dane po najechaniu myszą
+const miary={
+  t24:{min:22,max:40,kolory:['#313695','#74add1','#ffffbf','#f46d43','#a50026'],j:' °C',d:1},
+  a24:{min:-6,max:8,kolory:['#2166ac','#92c5de','#f7f7f7','#f4a582','#b2182b'],j:' °C',d:1},
+  z24:{min:20,max:100,kolory:['#fff7bc','#a1d99b','#238b45','#00441b'],j:'%',d:0},
+  b24:{min:0,max:70,kolory:['#fff5eb','#fdae6b','#e6550d','#7f2704'],j:'%',d:0},
+  dz:{min:-30,max:30,kolory:['#8c510a','#d8b365','#f5f5f5','#5ab4ac','#01665e'],j:' p.p.',d:0},
+  da:{min:-5,max:5,kolory:['#2166ac','#92c5de','#f7f7f7','#f4a582','#b2182b'],j:' °C',d:1}
+};
+function kolorMiary(v,m){             // płynne przejście między kolorami skali
+  const t=Math.max(0,Math.min(1,(v-m.min)/(m.max-m.min)))*(m.kolory.length-1);
+  const i=Math.min(Math.floor(t),m.kolory.length-2), f=t-i;
+  const a=m.kolory[i].match(/\w\w/g).map(h=>parseInt(h,16)), b=m.kolory[i+1].match(/\w\w/g).map(h=>parseInt(h,16));
+  return 'rgb('+a.map((x,j)=>Math.round(x+(b[j]-x)*f)).join(',')+')';
+}
+function opisKwadratu(p){
+  const w=(a,b,j,d)=>liczba(a,d)+j+' → <b>'+liczba(b,d)+j+'</b>';
+  return '<b>Kwadrat ok. 1 km² • 2015 → 2024</b><br>Zieleń: '+w(p.z15,p.z24,'%',0)+'<br>Zabudowa i grunt: '+w(p.b15,p.b24,'%',0)+
+    '<br>Woda: '+w(p.w15,p.w24,'%',1)+'<br>NDVI: '+w(p.n15,p.n24,'',2)+'<br>Temperatura: '+w(p.t15,p.t24,' °C',1)+
+    '<br>Przegrzanie: '+w(p.a15,p.a24,' °C',1);
+}
+let siatka=null;
+const gridMetric=document.querySelector('#gridMetric');
+function odswiezSiatke(){
+  const klucz=gridMetric.value, m=miary[klucz];
+  document.querySelector('#gridRamp').style.background='linear-gradient(to right,'+m.kolory.join(',')+')';
+  document.querySelector('#gridTicks').innerHTML='<span>≤ '+liczba(m.min,0)+m.j+'</span><span>'+liczba((m.min+m.max)/2,0)+'</span><span>≥ '+liczba(m.max,0)+m.j+'</span>';
+  if(!siatka)return;
+  siatka.setStyle(f=>({color:'#ffffff',weight:.3,fillOpacity:.82,fillColor:kolorMiary(f.properties[klucz],m)}));
+  const cechy=[];siatka.eachLayer(l=>cechy.push(l.feature.properties));
+  cechy.sort((a,b)=>b[klucz]-a[klucz]);
+  document.querySelector('#gridTop').innerHTML='Najwyższa wartość: <b>'+liczba(cechy[0][klucz],m.d)+m.j+'</b>, najniższa: <b>'+liczba(cechy[cechy.length-1][klucz],m.d)+m.j+'</b> • '+cechy.length+' kwadratów';
+}
+document.querySelector('#gridOn').addEventListener('change',e=>{
+  if(!e.target.checked){if(siatka)map.removeLayer(siatka);return;}
+  if(siatka){siatka.addTo(map);return;}
+  siatkaDane.then(g=>{
+    siatka=L.geoJSON(g,{renderer:L.canvas(),onEachFeature:(f,l)=>{
+      l.bindTooltip(()=>opisKwadratu(f.properties),{sticky:true});
+      l.on('mouseover',()=>l.setStyle({weight:2.5,color:'#0f2a33'}));
+      l.on('mouseout',()=>l.setStyle({weight:.3,color:'#ffffff'}));
+    }}).addTo(map);
+    odswiezSiatke();
+  });
+});
+gridMetric.addEventListener('change',odswiezSiatke);
+odswiezSiatke();
+
+// TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora i kliknięcia w mapę
+// Wskazówki: w map.on('click', e => ...) pomiń kliknięcia z e.analiza === true (należą do analizy okolicy).
+// Wartości NDVI i temperatury w punkcie: wczytajPiksele(rok).then(...) i odczyt jak w statystykiKola()
+// (R = klasa, G = (NDVI + 1) · 127,5, B = temperatura · 4). Cały obszar: map.fitBounds(cfg.bounds).
+
 showLayer(currentLayer);
 </script></body></html>

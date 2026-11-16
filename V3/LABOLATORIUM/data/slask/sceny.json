@@ -1,0 +1,25 @@
+{
+  "aoi": {
+    "west": 18.65,
+    "south": 50.12,
+    "east": 19.62,
+    "north": 50.48
+  },
+  "source": "Microsoft Planetary Computer, landsat-c2-l2 (USGS)",
+  "scenes": {
+    "2015": {
+      "id": "LC08_L2SP_189025_20150820_02_T1",
+      "date": "2015-08-20",
+      "platform": "landsat-8",
+      "cloud_cover_scene": 5.13,
+      "sun_elevation": 49.47328049
+    },
+    "2024": {
+      "id": "LC08_L2SP_189025_20240812_02_T1",
+      "date": "2024-08-12",
+      "platform": "landsat-8",
+      "cloud_cover_scene": 0.04,
+      "sun_elevation": 51.50711685
+    }
+  }
+}
