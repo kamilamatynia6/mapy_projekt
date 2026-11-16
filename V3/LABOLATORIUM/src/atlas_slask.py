@@ -195,6 +195,215 @@ def class_stats(cls: np.ndarray, pixel_km2: float) -> list:
              'km2': round(float((cls == c['id']).sum()) * pixel_km2, 1)} for c in CLASSES]
 
 
+# ---------------------------------------------------------------------------
+# Siatka 1 km, dane do analizy w przeglądarce i „problemy regionu”
+# ---------------------------------------------------------------------------
+import math
+import warnings
+from rasterio.transform import from_bounds
+from rasterio.warp import reproject, transform
+from rasterio.enums import Resampling
+
+CELL = 33          # 33 piksele × 30 m ≈ 1 km
+
+
+def pl(x: float, digits=1) -> str:
+    """Liczba z polskim przecinkiem dziesiętnym."""
+    return f'{x:.{digits}f}'.replace('.', ',').replace('-', '−')
+
+
+def block_stats(arrays: dict, cls: dict, r0: int, c0: int, size: int = CELL, mask=None) -> dict:
+    """Statystyki prostokąta (lub maski w nim) dla obu lat: udział zieleni, zabudowy, wody, NDVI, temperatura."""
+    out = {}
+    for y in YEARS:
+        k = cls[y][r0:r0+size, c0:c0+size]
+        sel = (k > 0) if mask is None else ((k > 0) & mask)
+        n = int(sel.sum())
+        if n == 0:
+            return {}
+        yy = y[2:]
+        out[f'z{yy}'] = round(100 * float(np.isin(k[sel], (2, 3)).mean()), 1)
+        out[f'b{yy}'] = round(100 * float((k[sel] == 4).mean()), 1)
+        out[f'w{yy}'] = round(100 * float((k[sel] == 1).mean()), 1)
+        out[f'n{yy}'] = round(float(np.nanmean(arrays[y]['NDVI'][r0:r0+size, c0:c0+size][sel])), 3)
+        out[f't{yy}'] = round(float(np.nanmean(arrays[y]['TEMP'][r0:r0+size, c0:c0+size][sel])), 1)
+        out[f'a{yy}'] = round(float(np.nanmean(arrays[y]['ANOM'][r0:r0+size, c0:c0+size][sel])), 1)
+        out['n'] = n
+    out['dz'] = round(out['z24'] - out['z15'], 1)
+    out['dn'] = round(out['n24'] - out['n15'], 3)
+    out['da'] = round(out['a24'] - out['a15'], 1)
+    return out
+
+
+def grid_geojson(arrays: dict, cls: dict, profile: dict) -> dict:
+    t = profile['transform']
+    h, w = cls[YEARS[0]].shape
+    features = []
+    for r0 in range(0, h, CELL):
+        for c0 in range(0, w, CELL):
+            if (cls[YEARS[0]][r0:r0+CELL, c0:c0+CELL] > 0).sum() < 0.3 * CELL * CELL:
+                continue
+            props = block_stats(arrays, cls, r0, c0)
+            if not props:
+                continue
+            props.pop('n')
+            x0, y0 = t * (c0, r0)
+            x1, y1 = t * (min(c0 + CELL, w), min(r0 + CELL, h))
+            ring = transform_geom(profile['crs'], 'EPSG:4326', {'type': 'Polygon',
+                                  'coordinates': [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]})
+            features.append({'type': 'Feature', 'properties': props, 'geometry': {'type': 'Polygon',
+                             'coordinates': [[[round(x, 5), round(y, 5)] for x, y in ring['coordinates'][0]]]}})
+    return {'type': 'FeatureCollection', 'features': features}
+
+
+def probe_png(cls: np.ndarray, ix: dict, profile: dict, path: Path, step_m=60) -> dict:
+    """Raster do analiz w przeglądarce, w siatce EPSG:4326 (piksel ok. 60 m).
+    Kanały PNG: R = klasa (0 = brak danych), G = (NDVI + 1) · 127,5, B = temperatura · 4 (co 0,25 °C)."""
+    from PIL import Image
+    h, w = cls.shape
+    west, south, east, north = transform_bounds(profile['crs'], 'EPSG:4326', *array_bounds(h, w, profile['transform']))
+    width = int(math.ceil((east - west) / (step_m / (111320 * math.cos(math.radians((south + north) / 2))))))
+    height = int(math.ceil((north - south) / (step_m / 110540)))
+    dst = from_bounds(west, south, east, north, width, height)
+
+    def warp(a, dtype, nodata):
+        out = np.full((height, width), nodata, dtype=dtype)
+        reproject(a.astype(dtype), out, src_transform=profile['transform'], src_crs=profile['crs'], dst_transform=dst,
+                  dst_crs='EPSG:4326', resampling=Resampling.nearest, src_nodata=nodata, dst_nodata=nodata)
+        return out
+
+    k = warp(cls, 'uint8', 0)
+    ndvi, temp = warp(ix['NDVI'], 'float32', np.nan), warp(ix['TEMP'], 'float32', np.nan)
+    g = np.where(np.isfinite(ndvi), np.clip(np.round((ndvi + 1) * 127.5), 0, 255), 0).astype('uint8')
+    b = np.where(np.isfinite(temp), np.clip(np.round(temp * 4), 1, 255), 0).astype('uint8')
+    Image.fromarray(np.dstack([k, g, b, np.full_like(k, 255)]), 'RGBA').save(path, optimize=True)
+    return {'url': path.name, 'bounds': [[south, west], [north, east]], 'width': width, 'height': height}
+
+
+def to_pixel(profile: dict, lat: float, lon: float):
+    xs, ys = transform('EPSG:4326', profile['crs'], [lon], [lat])
+    col, row = ~profile['transform'] * (xs[0], ys[0])
+    return row, col
+
+
+def to_latlon(profile: dict, row: float, col: float):
+    x, y = profile['transform'] * (col, row)
+    lons, lats = transform(profile['crs'], 'EPSG:4326', [x], [y])
+    return round(lats[0], 5), round(lons[0], 5)
+
+
+def circle_stats(arrays, cls, profile, lat, lon, radius_m=500) -> dict:
+    row, col = to_pixel(profile, lat, lon)
+    r = radius_m / abs(profile['transform'].a)
+    r0, c0 = int(row - r), int(col - r)
+    size = int(2 * r) + 2
+    rr, cc = np.indices((size, size))
+    mask = (rr + r0 + .5 - row) ** 2 + (cc + c0 + .5 - col) ** 2 <= r * r
+    return block_stats(arrays, cls, r0, c0, size, mask)
+
+
+def cell_center(profile, r: int, c: int):
+    return to_latlon(profile, r * CELL + CELL / 2, c * CELL + CELL / 2)
+
+
+def stories(arrays: dict, cls: dict, profile: dict, grid: dict) -> list:
+    """Przystanki wycieczki „Problemy regionu”. Miejsca stałe mają sprawdzone współrzędne,
+    a najgorętsze miejsce, największy ubytek zieleni i nowa woda są wyszukiwane automatycznie."""
+    cs = lambda lat, lon, r=500: circle_stats(arrays, cls, profile, lat, lon, r)
+    h, w = cls['2024'].shape
+    hh, ww = h // CELL, w // CELL
+
+    def blocks(a):
+        with np.errstate(all='ignore'), warnings.catch_warnings():
+            warnings.simplefilter('ignore', RuntimeWarning)       # kwadraty bez danych dają NaN
+            return np.nanmean(a[:hh * CELL, :ww * CELL].reshape(hh, CELL, ww, CELL), axis=(1, 3))
+
+    water24 = blocks((cls['2024'] == 1).astype('float32')) * 100
+    water15 = blocks((cls['2015'] == 1).astype('float32')) * 100
+    temp24 = blocks(arrays['2024']['TEMP'])
+    dndvi = blocks(arrays['2024']['NDVI']) - blocks(arrays['2015']['NDVI'])
+    out = []
+
+    # 1. Wyspa ciepła Katowic
+    kat, las = cs(50.2589, 19.0235, 1000), cs(50.205, 19.06, 1000)
+    out.append({'title': 'Wyspa ciepła Katowic', 'lat': 50.2589, 'lon': 19.0235, 'zoom': 12, 'year': '2024', 'layer': 'TEMP', 'radius': 1000,
+                'text': f"12 sierpnia 2024 r. powierzchnia w centrum Katowic nagrzała się średnio do {pl(kat['t24'])} °C, "
+                        f"a w Lesie Murckowskim, ok. 6 km dalej, tylko do {pl(las['t24'])} °C. Różnica: {pl(kat['t24'] - las['t24'])} °C. "
+                        "Asfalt, dachy i brak drzew zamieniają śródmieście w wyspę ciepła.",
+                'facts': [['Centrum Katowic', f"{pl(kat['t24'])} °C"], ['Las Murckowski', f"{pl(las['t24'])} °C"],
+                          ['Zieleń w centrum', f"{pl(kat['z24'], 0)}%"]]})
+    # 2. Park Śląski chłodzi
+    park, chorzow = cs(50.29, 18.99), cs(50.2975, 18.9545)
+    out.append({'title': 'Park Śląski – zielona klimatyzacja', 'lat': 50.29, 'lon': 18.99, 'zoom': 13, 'year': '2024', 'radius': 500,
+                'compare': {'mode': 'warstwy', 'left': 'PODCZERWIEN', 'right': 'TEMP'},
+                'text': f"Jeden z największych parków miejskich w Europie. W jego wnętrzu powierzchnia miała {pl(park['t24'])} °C, "
+                        f"a w centrum pobliskiego Chorzowa {pl(chorzow['t24'])} °C. Przesuń suwak: tam, gdzie podczerwień pokazuje "
+                        "roślinność (czerwień), mapa temperatury robi się niebieska.",
+                'facts': [['Park Śląski', f"{pl(park['t24'])} °C"], ['Centrum Chorzowa', f"{pl(chorzow['t24'])} °C"],
+                          ['NDVI w parku', pl(park['n24'], 2)]]})
+    # 3. Najgorętsze miejsce regionu (automatycznie)
+    r, c = np.unravel_index(np.nanargmax(np.where(water24 < 5, temp24, np.nan)), temp24.shape)
+    lat, lon = cell_center(profile, r, c)
+    hot = block_stats(arrays, cls, r * CELL, c * CELL)
+    desert = abs(lat - 50.36) < 0.04 and abs(lon - 19.52) < 0.06
+    out.append({'title': 'Pustynia Błędowska – najgorętszy kilometr' if desert else 'Najgorętszy kilometr regionu',
+                'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'layer': 'TEMP', 'radius': 500,
+                'compare': {'mode': 'warstwy', 'left': 'RGB', 'right': 'TEMP'},
+                'text': (f"Program sam przeszukał {len(grid['features'])} kwadratów 1 km i znalazł najgorętszy: {pl(hot['t24'])} °C. "
+                         + ("To Pustynia Błędowska – odsłonięty piasek nie paruje i nagrzewa się mocniej niż beton. "
+                            if desert else "")
+                         + ("Zieleni praktycznie tu nie ma." if hot['z24'] < 1 else f"Zieleń zajmuje tu tylko {pl(hot['z24'], 0)}% powierzchni.")),
+                'facts': [['Temperatura', f"{pl(hot['t24'])} °C"], ['NDVI', pl(hot['n24'], 2)], ['Zieleń', f"{pl(hot['z24'], 0)}%"]]})
+    # 4. Jeziora po wydobyciu piasku
+    pog = cs(50.36, 19.20, 1500)
+    out.append({'title': 'Pogorie – jeziora po kopalniach piasku', 'lat': 50.36, 'lon': 19.20, 'zoom': 12, 'year': '2024', 'layer': 'MNDWI', 'radius': 1500,
+                'text': f"Jeziora Pogoria w Dąbrowie Górniczej powstały w zalanych wyrobiskach po wydobyciu piasku. "
+                        f"W promieniu 1,5 km woda zajmuje {pl(pog['w24'], 0)}% powierzchni, a temperatura wynosi średnio "
+                        f"{pl(pog['t24'])} °C – woda działa jak naturalny chłodnik okolicy.",
+                'facts': [['Woda', f"{pl(pog['w24'], 0)}%"], ['Temperatura', f"{pl(pog['t24'])} °C"], ['Zieleń', f"{pl(pog['z24'], 0)}%"]]})
+    # 5. Największy ubytek zieleni (automatycznie, bez kwadratów z wodą)
+    land = (water24 < 5) & (water15 < 5)
+    r, c = np.unravel_index(np.nanargmin(np.where(land, dndvi, np.nan)), dndvi.shape)
+    lat, lon = cell_center(profile, r, c)
+    loss = block_stats(arrays, cls, r * CELL, c * CELL)
+    on_desert = abs(lat - 50.36) < 0.04 and abs(lon - 19.52) < 0.06
+    out.append({'title': 'Największy ubytek zieleni', 'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'radius': 500,
+                'compare': {'mode': 'lata', 'layer': 'RGB'},
+                'text': f"W tym kwadracie NDVI spadło z {pl(loss['n15'], 2)} do {pl(loss['n24'], 2)}, a udział zieleni "
+                        f"z {pl(loss['z15'], 0)}% do {pl(loss['z24'], 0)}%. "
+                        + ("Kwadrat leży na Pustyni Błędowskiej – ubytek zieleni oznacza tu powrót odkrytego piasku. " if on_desert else "")
+                        + "Przesuń suwak 2015 | 2024 na zdjęciu i oceń, co się zmieniło – satelita pokazuje skutek, przyczynę trzeba sprawdzić w terenie.",
+                'facts': [['Zieleń 2015', f"{pl(loss['z15'], 0)}%"], ['Zieleń 2024', f"{pl(loss['z24'], 0)}%"], ['Δ NDVI', pl(loss['dn'], 2)]]})
+    # 6. Nowa woda (automatycznie)
+    r, c = np.unravel_index(np.nanargmax(water24 - water15), water24.shape)
+    lat, lon = cell_center(profile, r, c)
+    wet = block_stats(arrays, cls, r * CELL, c * CELL)
+    out.append({'title': 'Tu pojawiła się woda', 'lat': lat, 'lon': lon, 'zoom': 13, 'year': '2024', 'radius': 500,
+                'compare': {'mode': 'lata', 'layer': 'MNDWI'},
+                'text': f"Udział wody w tym kwadracie wzrósł z {pl(wet['w15'], 0)}% do {pl(wet['w24'], 0)}%. Na Śląsku nowe zbiorniki "
+                        "powstają m.in. w zalanych wyrobiskach i zapadliskach – suwak lat pokazuje zmianę.",
+                'facts': [['Woda 2015', f"{pl(wet['w15'], 0)}%"], ['Woda 2024', f"{pl(wet['w24'], 0)}%"]]})
+    # 7. Susza 2015 na polach
+    r, c = np.unravel_index(np.nanargmax(np.where(land, dndvi, np.nan)), dndvi.shape)
+    lat, lon = cell_center(profile, r, c)
+    gain = block_stats(arrays, cls, r * CELL, c * CELL)
+    out.append({'title': 'Pola: susza 2015 kontra 2024', 'lat': lat, 'lon': lon, 'zoom': 12, 'year': '2024', 'radius': 500,
+                'compare': {'mode': 'lata', 'layer': 'NDVI'},
+                'text': f"Największy „przyrost zieleni” to pola uprawne: NDVI z {pl(gain['n15'], 2)} do {pl(gain['n24'], 2)}. "
+                        "Sierpień 2015 r. przypadł na wielką suszę, a stan pól zależy też od terminu żniw – nie każda zmiana "
+                        "na mapie to trwała zmiana krajobrazu.",
+                'facts': [['NDVI 2015', pl(gain['n15'], 2)], ['NDVI 2024', pl(gain['n24'], 2)]]})
+    return out
+
+
+def correlation(grid: dict) -> dict:
+    z = np.array([f['properties']['z24'] for f in grid['features']])
+    t = np.array([f['properties']['t24'] for f in grid['features']])
+    slope, intercept = np.polyfit(z, t, 1)
+    return {'r': round(float(np.corrcoef(z, t)[0, 1]), 2), 'slope_per_10pp': round(float(slope * 10), 2),
+            'intercept': round(float(intercept), 2), 'cells': int(z.size)}
+
+
 def compress_tiles(folder: Path) -> int:
     """Zapisuje kafelki jako PNG z paletą 256 kolorów: ok. 4× mniej danych do wysłania na serwer,
     średni błąd koloru 2–4 na 255 (niewidoczny). Zwraca łączny rozmiar w bajtach."""
@@ -247,6 +456,14 @@ def build_site(output_dir: Path = ROOT / 'outputs', minzoom=9, maxzoom=12) -> di
     layers[('zmiany', 'PRZEJSCIA')] = categorical_rgba(trans, TRANSITIONS)
     summary['transitions'] = [{**t, 'km2': round(float((trans == t['id']).sum()) * pixel_km2, 1)} for t in TRANSITIONS]
 
+    arrays = {y: {'NDVI': ix[y]['NDVI'], 'TEMP': ix[y]['TEMP'], 'ANOM': temperature_anomaly(ix[y]['TEMP'])} for y in YEARS}
+    grid = grid_geojson(arrays, cls, profile)
+    (site / 'siatka.geojson').write_text(json.dumps(grid, separators=(',', ':')), encoding='utf-8')
+    summary['grid_cells'] = len(grid['features'])
+    summary['correlation'] = correlation(grid)
+    probes = {y: probe_png(cls[y], ix[y], profile, site / f'analiza_{y}.png') for y in YEARS}
+    tour = stories(arrays, cls, profile, grid)
+
     for (folder, name), rgba in layers.items():
         tif = rasters / f'{name}_{folder}_display.tif'
         write_geotiff(tif, rgba, profile, rgba=True)
@@ -267,7 +484,7 @@ def build_site(output_dir: Path = ROOT / 'outputs', minzoom=9, maxzoom=12) -> di
     config = {'bounds': [[s_, w], [n, e]], 'minzoom': minzoom, 'maxzoom': maxzoom,
               'years': {y: scenes[y]['scene'] for y in YEARS}, 'layers': layer_meta,
               'classes': [{k: c[k] for k in ('id', 'name', 'color', 'rule')} for c in CLASSES],
-              'transitions': TRANSITIONS}
+              'transitions': TRANSITIONS, 'probe': probes, 'stories': tour, 'correlation': summary['correlation']}
     template = (Path(__file__).parent / 'map_template.html').read_text(encoding='utf-8')
     (site / 'index.html').write_text(template.replace('__MAP_CONFIG__', json.dumps(config, ensure_ascii=False)), encoding='utf-8')
     summary['export_seconds'] = round(time.perf_counter() - start, 1)
