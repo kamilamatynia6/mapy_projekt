@@ -81,6 +81,16 @@ table.zmiany th{font-size:12px;color:var(--szary);text-align:right;font-weight:6
 table.zmiany th:first-child,table.zmiany td:first-child{text-align:left}
 table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:right}
 .plus{color:#1a7f37;font-weight:700}.minus{color:#c0392b;font-weight:700}
+/* Kamila: statystyki */
+.slupki{margin:6px 0 12px}
+.slupki .wiersz{display:grid;grid-template-columns:44px 1fr 52px;gap:6px;align-items:center;font-size:13px;margin:2px 0}
+.slupki .tor{background:#e3ebea;border-radius:4px;height:11px;overflow:hidden}
+.slupki .tor div{height:100%;border-radius:4px}
+.liczby{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.liczby div{background:#fff;border:1px solid var(--linia);border-radius:10px;padding:8px 10px;font-size:12px;color:var(--szary)}
+.liczby b{display:block;font-size:18px;color:var(--granat)}
+#scatter svg circle.pkt{cursor:pointer}
+#scatter svg circle.pkt:hover{stroke:#0f2a33;stroke-width:1.5}
 @media(max-width:700px){h1{font-size:16px}header p{display:none}.legenda{width:200px}body.panel-otwarty .narzedzia{right:14px;opacity:0;pointer-events:none}}
 </style></head><body>
 <header>
@@ -102,6 +112,7 @@ table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:rig
 <button data-otworz="porownaj">⇆<span>Porównaj</span></button>
 <button data-otworz="problemy">⚠<span>Problemy regionu</span></button>
 <button data-otworz="analiza">📍<span>Analiza okolicy</span></button>
+<button data-otworz="statystyki">📊<span>Statystyki</span></button>
 </div>
 
 <!-- Kamila: pionowa linia suwaka porównania -->
@@ -129,6 +140,7 @@ table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:rig
 <button data-zakladka="porownaj">⇆ Porównaj</button>
 <button data-zakladka="problemy">⚠ Problemy</button>
 <button data-zakladka="analiza">📍 Analiza</button>
+<button data-zakladka="statystyki">📊 Statystyki</button>
 </nav>
 <div class="tresc">
 
@@ -185,6 +197,15 @@ table.zmiany td{padding:5px 3px;border-top:1px solid var(--linia);text-align:rig
 <h3>Promień: <span id="radiusValue">1 km</span></h3>
 <input id="radius" type="range" min="250" max="5000" step="250" value="1000">
 <div id="analyzeResult" class="opis">Kliknij przycisk, a potem dowolne miejsce na mapie – np. swoje osiedle.</div>
+</section>
+
+<!-- Kamila: statystyki obszaru -->
+<section data-zakladka="statystyki">
+<h2>Statystyki obszaru</h2>
+<div id="statsBody" class="opis">Wczytywanie…</div>
+<h3>Czy zieleń chłodzi?</h3>
+<div id="scatter" class="opis">Wczytywanie wykresu…</div>
+<p class="opis">Każda kropka to kwadrat 1 km w 2024 r. Kliknij kropkę, żeby zobaczyć to miejsce na mapie. Chłodne kropki w lewym dolnym rogu to jeziora – nie mają zieleni, ale woda chłodzi.</p>
 </section>
 
 <!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, wartości wskaźników po kliknięciu w mapę -->
@@ -535,6 +556,54 @@ document.querySelector('#radius').addEventListener('input',e=>{
   document.querySelector('#radiusValue').textContent=m>=1000?liczba(m/1000,m%1000?2:0).replace(/,?0+$/,'')+' km':m+' m';
   analizuj();
 });
+
+// Kamila: statystyki obszaru – słupki klas 2015 vs 2024, najważniejsze liczby i wykres rozrzutu
+const siatkaDane=fetch('siatka.geojson').then(r=>r.json());
+let zaznaczonyKwadrat=null;
+function pokazStatystyki(){
+  podsumowanie.then(s=>{
+    if(!s)return;
+    const lata=Object.keys(s.years), km2=s.years[lata[1]].classes.reduce((a,c)=>a+c.km2,0);
+    const t=Object.fromEntries(s.transitions.map(x=>[x.name,x.km2]));
+    document.querySelector('#statsBody').innerHTML=
+      '<div class="liczby">'+
+      '<div>Obszar atlasu<b>'+liczba(km2,0)+' km²</b></div>'+
+      lata.map(y=>'<div>Śr. temperatura '+y+'<b>'+liczba(s.years[y].indices.TEMP.mean)+' °C</b></div>').join('')+
+      '<div>Najgorętsze 2% obszaru '+lata[1]+'<b>> '+liczba(s.years[lata[1]].indices.TEMP.p98)+' °C</b></div>'+
+      '<div>Zieleń zamieniona w grunt/zabudowę<b>'+liczba(t['Ubytek zieleni'],0)+' km²</b></div>'+
+      '<div>Nowa woda<b>'+liczba(t['Nowa woda'])+' km²</b></div></div>'+
+      '<h3>Pokrycie terenu</h3>'+cfg.classes.map(c=>'<div style="font-weight:600;font-size:13px;margin-top:8px">'+c.name+'</div><div class="slupki">'+
+        lata.map(y=>{const k=s.years[y].classes.find(x=>x.id===c.id);
+          return '<div class="wiersz"><span>'+y+'</span><div class="tor"><div style="width:'+k.percent+'%;background:'+c.color+';opacity:'+(y===lata[0]?.55:1)+'"></div></div><b>'+liczba(k.percent)+'%</b></div>';}).join('')+'</div>').join('')+
+      '<p class="opis">Więcej zieleni w 2024 r. to głównie efekt suszy w sierpniu 2015 r. i innego terminu żniw – porównuj ostrożnie.</p>';
+  });
+  siatkaDane.then(g=>{
+    const W=350,H=260,m={l:42,r:10,t:10,b:36}, c=cfg.correlation;
+    const pkt=g.features.map(f=>({z:f.properties.z24,t:f.properties.t24,f}));
+    const tMin=Math.floor(Math.min(...pkt.map(p=>p.t))), tMax=Math.ceil(Math.max(...pkt.map(p=>p.t)));
+    const X=z=>m.l+z/100*(W-m.l-m.r), Y=t=>H-m.b-(t-tMin)/(tMax-tMin)*(H-m.t-m.b);
+    const ramp=cfg.layers.TEMP.ramp, kolor=t=>ramp[Math.max(0,Math.min(ramp.length-1,Math.round((t-cfg.layers.TEMP.min)/(cfg.layers.TEMP.max-cfg.layers.TEMP.min)*(ramp.length-1))))];
+    let svg='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="background:#fff;border:1px solid var(--linia);border-radius:12px">';
+    for(let z=0;z<=100;z+=25)svg+='<line x1="'+X(z)+'" x2="'+X(z)+'" y1="'+m.t+'" y2="'+(H-m.b)+'" stroke="#eef2f1"/><text x="'+X(z)+'" y="'+(H-m.b+14)+'" font-size="10" text-anchor="middle" fill="#5b7480">'+z+'%</text>';
+    for(let t=Math.ceil(tMin/5)*5;t<=tMax;t+=5)svg+='<line x1="'+m.l+'" x2="'+(W-m.r)+'" y1="'+Y(t)+'" y2="'+Y(t)+'" stroke="#eef2f1"/><text x="'+(m.l-5)+'" y="'+(Y(t)+3)+'" font-size="10" text-anchor="end" fill="#5b7480">'+t+'°</text>';
+    svg+=pkt.map((p,i)=>'<circle class="pkt" data-i="'+i+'" cx="'+X(p.z).toFixed(1)+'" cy="'+Y(p.t).toFixed(1)+'" r="2.3" fill="'+kolor(p.t)+'" fill-opacity=".75"><title>Zieleń '+liczba(p.z,0)+'% • '+liczba(p.t)+' °C</title></circle>').join('');
+    const yA=c.intercept, yB=c.intercept+c.slope_per_10pp*10;
+    svg+='<line x1="'+X(0)+'" y1="'+Y(yA)+'" x2="'+X(100)+'" y2="'+Y(yB)+'" stroke="#0f2a33" stroke-width="2.5" stroke-dasharray="6 4"/>';
+    svg+='<text x="'+(W-m.r)+'" y="'+(m.t+12)+'" font-size="11" text-anchor="end" font-weight="700" fill="#0f2a33">r = '+liczba(c.r,2)+' • '+liczba(c.slope_per_10pp)+' °C na +10% zieleni</text>';
+    svg+='<text x="'+((W+m.l)/2)+'" y="'+(H-4)+'" font-size="11" text-anchor="middle" fill="#173541">udział zieleni w kwadracie</text>';
+    svg+='<text x="12" y="'+(H/2)+'" font-size="11" text-anchor="middle" fill="#173541" transform="rotate(-90 12 '+(H/2)+')">temperatura powierzchni</text></svg>';
+    const box=document.querySelector('#scatter'); box.innerHTML=svg;
+    box.querySelector('svg').addEventListener('click',e=>{
+      const k=e.target.closest('circle.pkt'); if(!k)return;
+      const f=pkt[Number(k.dataset.i)].f, kwadrat=L.geoJSON(f).getBounds();
+      if(zaznaczonyKwadrat)map.removeLayer(zaznaczonyKwadrat);
+      zaznaczonyKwadrat=L.rectangle(kwadrat,{color:'#e4572e',weight:3,fill:false,interactive:false}).addTo(map);
+      if(rok!=='2024')ustawRok('2024');
+      map.flyToBounds(kwadrat.pad(1.5),{duration:1.5});
+    });
+  });
+}
+onTabOpen.statystyki=pokazStatystyki;
 
 // TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora i kliknięcia w mapę
 
