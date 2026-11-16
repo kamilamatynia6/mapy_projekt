@@ -1,371 +1,252 @@
 <!doctype html>
 <html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Landsat 8 • Kraków i okolice • V3</title><link rel="stylesheet" href="vendor/leaflet.css">
+<title>Atlas środowiskowy Górnego Śląska • V3</title><link rel="stylesheet" href="vendor/leaflet.css">
 <style>
+/* Kamila: wygląd atlasu – mapa na cały ekran, wysuwany panel, pływające karty */
+:root{--granat:#0f2a33;--granat2:#173f4b;--tekst:#173541;--szary:#5b7480;--tlo:#f4f7f6;--akcent:#e4572e;--linia:#d6e0de;--cien:0 6px 24px rgba(10,30,40,.28)}
 *{box-sizing:border-box}
-body{margin:0;font:16px system-ui,sans-serif;color:#173541;background:#f5f7f6;display:flex;flex-direction:column;height:100vh}
-header{padding:16px 24px;background:#133e4a;color:white}
-h1{font-size:24px;margin:0}
-main{display:grid;grid-template-columns:1fr 300px;flex:1;min-height:450px}
-#map{height:100%;background:#e6eceb}
-aside{padding:20px;overflow:auto}
-aside h2{font-size:17px;margin:0 0 8px}
-aside section{margin-bottom:22px}
-@media(max-width:700px){main{display:flex;flex-direction:column;height:auto}#map{height:62vh;min-height:350px}}
-</style>
-<style>
-/* Kamila: wygląd wycieczki po atlasie */
-.tour-btn{background:#133e4a;color:#fff;border:0;border-radius:8px;padding:10px 16px;font:600 15px system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.35)}
-.tour-btn:hover{background:#1d5868}
-.tour-card{width:330px;max-width:calc(100vw - 40px);background:rgba(255,255,255,.97);border-radius:10px;padding:14px 16px;box-shadow:0 4px 20px rgba(0,0,0,.3);font:14px system-ui,sans-serif;color:#173541}
-.tour-card h3{margin:2px 0 6px;font-size:19px}
-.tour-bar{display:flex;height:12px;border-radius:4px;overflow:hidden;margin:8px 0 5px;background:#dde5e4}
-.tour-nav{display:flex;gap:8px;margin-top:12px}
-.tour-nav button{flex:1;padding:7px;border:1px solid #133e4a;border-radius:6px;background:#fff;color:#133e4a;cursor:pointer;font:600 14px system-ui,sans-serif}
-.tour-nav button.main{background:#133e4a;color:#fff}
-.tour-nav button:disabled{opacity:.35;cursor:default}
+html,body{height:100%}
+body{margin:0;font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tekst);background:var(--granat);display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:16px;padding:10px 18px;background:linear-gradient(90deg,#0b222a,#173f4b);color:#fff;z-index:1100;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+header .tytul{flex:1;min-width:0}
+h1{font-size:21px;margin:0;letter-spacing:.2px}
+header p{margin:2px 0 0;font-size:13px;color:#bcd3d6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lata{display:flex;background:rgba(255,255,255,.12);border-radius:999px;padding:3px}
+.lata button{border:0;background:transparent;color:#d8e7e8;font:600 14px system-ui,sans-serif;padding:6px 14px;border-radius:999px;cursor:pointer}
+.lata button.on{background:#fff;color:var(--granat)}
+.przycisk{border:0;border-radius:8px;padding:8px 14px;background:var(--akcent);color:#fff;font:600 14px system-ui,sans-serif;cursor:pointer}
+#obszar{position:relative;flex:1;min-height:0;overflow:hidden}
+#map{position:absolute;inset:0;background:#dfe7e6}
+/* pasek narzędzi na mapie */
+.narzedzia{position:absolute;top:14px;right:14px;z-index:1000;display:flex;flex-direction:column;gap:8px;transition:right .3s}
+body.panel-otwarty .narzedzia{right:404px}
+.narzedzia button{width:46px;height:46px;border:0;border-radius:12px;background:rgba(255,255,255,.95);box-shadow:var(--cien);font-size:20px;cursor:pointer;position:relative}
+.narzedzia button.on{background:var(--granat);color:#fff}
+.narzedzia button span{position:absolute;right:54px;top:50%;transform:translateY(-50%);background:var(--granat);color:#fff;font:600 12px system-ui,sans-serif;padding:4px 8px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s}
+.narzedzia button:hover span{opacity:1}
+/* wysuwany panel */
+#panel{position:absolute;top:0;right:0;bottom:0;width:390px;max-width:100vw;background:var(--tlo);z-index:1050;box-shadow:-6px 0 24px rgba(0,0,0,.25);transform:translateX(105%);transition:transform .3s ease;display:flex;flex-direction:column}
+body.panel-otwarty #panel{transform:none}
+.panel-gora{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 0}
+.panel-gora b{font-size:17px}
+.zamknij{border:0;background:transparent;font-size:22px;cursor:pointer;color:var(--szary)}
+.zakladki{display:flex;gap:4px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--linia)}
+.zakladki button{border:0;background:#e3ebea;border-radius:8px;padding:6px 10px;font:600 13px system-ui,sans-serif;color:var(--tekst);cursor:pointer}
+.zakladki button.on{background:var(--granat);color:#fff}
+.tresc{flex:1;overflow:auto;padding:14px 16px 30px}
+.tresc section[data-zakladka]{display:none}
+.tresc section.on{display:block}
+.tresc h2{font-size:17px;margin:4px 0 8px}
+.tresc h3{font-size:14px;margin:16px 0 6px;color:var(--szary);text-transform:uppercase;letter-spacing:.5px}
+.karta{background:#fff;border:1px solid var(--linia);border-radius:12px;padding:12px;margin:10px 0}
+.opis{font-size:13px;color:var(--szary)}
+select,input[type=range]{width:100%}
+select{padding:7px;font-size:14px;border-radius:8px;border:1px solid #b9c9c7;background:#fff}
+/* legenda na mapie */
+.legenda{position:absolute;left:14px;bottom:34px;z-index:1000;background:rgba(255,255,255,.95);border-radius:12px;box-shadow:var(--cien);padding:10px 12px;width:260px;font-size:13px}
+.legenda b{display:block;margin-bottom:6px}
+@media(max-width:700px){h1{font-size:16px}header p{display:none}.legenda{width:200px}body.panel-otwarty .narzedzia{right:14px;opacity:0;pointer-events:none}}
 </style></head><body>
 <header>
-<h1>Atlas środowiskowy Krakowa</h1>
+<div class="tytul">
+<h1>Atlas środowiskowy Górnego Śląska</h1>
 <!-- Amelia: podtytuł z datą sceny i autorami -->
-<p style="margin:4px 0 0;font-size:14px;color:#d8e7e8">Atlas środowiskowy • scena z 7 sierpnia 2013 • Kamila Matynia, Amelia Hajduga, Rafał Złoza</p>
+<p>Landsat 8 • 20.08.2015 i 12.08.2024 • Kamila Matynia, Amelia Hajduga, Rafał Złoza</p>
+</div>
+<!-- Kamila: przełącznik lat -->
+<div class="lata" id="lata"></div>
+<button class="przycisk" id="panelBtn">☰ Panel</button>
 </header>
-<main><div id="map" aria-label="Interaktywna mapa wskaźników"></div><aside>
- 
-<!-- Amelia: wybór warstwy i opis -->
-<section>
-<h2>Warstwa mapy</h2>
-<select id="layer" style="width:100%;padding:6px;font-size:15px">
-<option value="NDVI">NDVI – roślinność</option>
-<option value="NDBI">NDBI – zabudowa</option>
-<option value="MNDWI">MNDWI – woda</option>
-<option value="RGB">RGB – naturalne barwy</option>
-<!-- Kamila: warstwy atlasu -->
-<option value="KLASY">Pokrycie terenu – klasy</option>
-<option value="DEFICYT">Deficyt zieleni</option>
-<option value="PODCZERWIEN">Podczerwień (B5/B4/B3)</option>
-<option value="MIASTO">Kompozycja miejska (B6/B5/B4)</option>
-</select>
-<p id="explain" style="font-size:14px"></p>
-</section>
- 
-<!-- Amelia: legenda -->
+<div id="obszar">
+<div id="map" aria-label="Interaktywna mapa atlasu"></div>
+
+<!-- Kamila: pasek narzędzi – każdy przycisk otwiera zakładkę panelu -->
+<div class="narzedzia" id="narzedzia">
+<button data-otworz="warstwy">🗺<span>Warstwy</span></button>
+</div>
+
+<!-- Amelia: legenda (teraz jako karta na mapie, zawsze widoczna) -->
+<div class="legenda" id="legendCard">
+<b id="legendTitle">Legenda</b>
 <section id="legend">
-<h2>Legenda</h2>
-<div id="ramp" style="height:16px;border-radius:4px;border:1px solid #9bb"></div>
-<div style="display:flex;justify-content:space-between;font-size:13px"><span>−1</span><span>0</span><span>1</span></div>
+<div id="ramp" style="height:14px;border-radius:4px;border:1px solid #9bb"></div>
+<div style="display:flex;justify-content:space-between;font-size:12px"><span id="legendMin"></span><span id="legendMid"></span><span id="legendMax"></span></div>
 </section>
- 
+<!-- Kamila: legenda kategorii (klasy, przejścia) -->
+<div id="classList"></div>
+</div>
+
+<!-- Kamila: wysuwany panel z zakładkami -->
+<aside id="panel">
+<div class="panel-gora"><b>Atlas – narzędzia</b><button class="zamknij" id="panelClose" aria-label="Zamknij panel">✕</button></div>
+<nav class="zakladki" id="zakladki">
+<button data-zakladka="warstwy">🗺 Warstwy</button>
+</nav>
+<div class="tresc">
+
+<section data-zakladka="warstwy">
+<!-- Amelia: wybór warstwy i opis -->
+<h2>Warstwa mapy</h2>
+<select id="layer"></select>
+<p id="explain" class="opis"></p>
+
 <!-- Amelia: suwak przezroczystości -->
-<section>
-<h2>Przezroczystość</h2>
-<input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85" style="width:100%">
+<h3>Przezroczystość</h3>
+<input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85">
 <span id="opacityValue">85%</span>
-</section>
- 
-<!-- ------------------------------------------------------------ -->
 
-<!-- Kamila: legenda klas pokrycia terenu (widoczna dla warstwy KLASY) -->
-<section id="classLegend" hidden>
-<h2>Klasy pokrycia terenu</h2>
-<div id="classList" style="font-size:14px"></div>
-</section>
-
-<!-- Kamila: panel statystyk całego obszaru (dane z summary.json) -->
-<section id="stats">
-<h2>Statystyki obszaru</h2>
-<div id="statsBody" style="font-size:14px">Wczytywanie…</div>
-</section>
-
-<!-- Kamila: siatka 1 km – kwadraty pokolorowane wybraną miarą -->
-<section>
-<h2>Siatka 1 km</h2>
-<label style="display:flex;gap:8px;align-items:center;font-size:15px"><input type="checkbox" id="gridOn"> Pokaż kwadraty 1 × 1 km</label>
-<select id="gridMetric" style="width:100%;padding:5px;margin-top:6px;font-size:14px">
-<option value="zielen">Zieleń razem [%]</option>
-<option value="zabudowa">Zabudowa i odkryty grunt [%]</option>
-<option value="woda">Woda [%]</option>
-<option value="ndvi">Średnie NDVI</option>
+<!-- Kamila: podkład mapy -->
+<h3>Podkład</h3>
+<select id="basemap">
+<option value="jasny">Jasny</option>
+<option value="ciemny">Ciemny</option>
+<option value="satelita">Zdjęcie satelitarne (aktualne)</option>
+<option value="osm">OpenStreetMap</option>
+<option value="brak">Bez podkładu</option>
 </select>
-<div id="gridRamp" style="height:12px;border-radius:3px;margin-top:8px;border:1px solid #9bb"></div>
-<div id="gridTicks" style="display:flex;justify-content:space-between;font-size:12px"></div>
-<p style="font-size:13px;color:#5b7480;margin:6px 0 0">Najedź myszą na kwadrat, żeby zobaczyć jego statystyki.</p>
+<label style="display:flex;gap:8px;align-items:center;margin-top:8px;font-size:14px"><input type="checkbox" id="labels" checked> Nazwy miejscowości nad mapą</label>
+
+<div class="karta opis" id="sceneInfo"></div>
 </section>
 
-<!-- Kamila: analiza okolicy – statystyki w kole o wybranym promieniu -->
-<section id="analiza">
-<h2>Analiza okolicy</h2>
-<button id="analyzeBtn" style="width:100%;padding:8px;font-size:15px;border:0;border-radius:6px;background:#133e4a;color:#fff;cursor:pointer">📍 Wybierz miejsce na mapie</button>
-<label for="radius" style="display:block;margin-top:8px;font-size:14px">Promień: <b id="radiusValue">500 m</b></label>
-<input id="radius" type="range" min="250" max="3000" step="250" value="500" style="width:100%">
-<div id="analyzeResult" style="font-size:14px;color:#5b7480">Kliknij przycisk, a potem dowolne miejsce na mapie.</div>
-</section>
+<!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, wartości wskaźników po kliknięciu w mapę -->
 
-<!-- ------------------------------------------------------------ -->
- 
-<!-- TODO Rafał: przycisk "Cały obszar", współrzędne kursora, suwak porównania dwóch warstw, wartości wskaźników po kliknięciu w mapę -->
- 
-<p id="state">Wczytywanie mapy…</p>
-</aside></main>
+<p id="state" class="opis">Wczytywanie mapy…</p>
+</div>
+</aside>
+</div>
+
 <script src="vendor/leaflet.js"></script><script>
 const cfg=__MAP_CONFIG__;
-const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17}).fitBounds(cfg.bounds);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
- 
-// Wspólna część: pokazuje jedną warstwę wynikową (domyślnie NDVI).
+const map=L.map('map',{minZoom:cfg.minzoom,maxZoom:17,zoomSnap:0.25}).fitBounds(cfg.bounds,{padding:[10,10]});
+
+// Kamila: podkłady mapy do wyboru (Esri, bez klucza API) i nazwy miejscowości nad warstwą danych
+const esri=s=>'https://server.arcgisonline.com/ArcGIS/rest/services/'+s+'/MapServer/tile/{z}/{y}/{x}';
+const esriAtr='Podkład: Esri, HERE, Garmin, © OpenStreetMap contributors';
+const podklady={
+  jasny:L.tileLayer(esri('Canvas/World_Light_Gray_Base'),{maxZoom:16,attribution:esriAtr}),
+  ciemny:L.tileLayer(esri('Canvas/World_Dark_Gray_Base'),{maxZoom:16,attribution:esriAtr}),
+  satelita:L.tileLayer(esri('World_Imagery'),{maxZoom:18,attribution:'Podkład: Esri, Maxar, Earthstar Geographics'}),
+  osm:L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'})
+};
+map.createPane('etykiety');
+map.getPane('etykiety').style.zIndex=450;              // nad kafelkami danych, pod wektorami
+map.getPane('etykiety').style.pointerEvents='none';
+const etykiety={
+  jasne:L.tileLayer(esri('Canvas/World_Light_Gray_Reference'),{pane:'etykiety',maxZoom:16}),
+  ciemne:L.tileLayer(esri('Canvas/World_Dark_Gray_Reference'),{pane:'etykiety',maxZoom:16})
+};
+let podklad=podklady.jasny.addTo(map), etykieta=etykiety.jasne.addTo(map);
+function ustawPodklad(){
+  const nazwa=document.querySelector('#basemap').value, nazwy=document.querySelector('#labels').checked;
+  if(podklad)map.removeLayer(podklad);
+  if(etykieta)map.removeLayer(etykieta);
+  podklad=podklady[nazwa]||null;
+  if(podklad)podklad.addTo(map).bringToBack();
+  etykieta=nazwy?(nazwa==='ciemny'||nazwa==='satelita'?etykiety.ciemne:etykiety.jasne):null;
+  if(etykieta)etykieta.addTo(map);
+}
+document.querySelector('#basemap').addEventListener('change',ustawPodklad);
+document.querySelector('#labels').addEventListener('change',ustawPodklad);
+
+// Wspólna część: pokazuje jedną warstwę wynikową.
 // showLayer(nazwa) zmienia warstwę, a funkcje dodane do onLayerChange
 // są wywoływane po każdej zmianie (np. żeby odświeżyć legendę).
-let overlay, currentLayer='NDVI', currentOpacity=0.85;
+// Kamila: warstwy są w dwóch wersjach (2015 i 2024) albo w folderze „zmiany”.
+let overlay, currentLayer='TEMP', currentOpacity=0.85, rok='2024';
 const onLayerChange=[];
+function folderWarstwy(name){return cfg.layers[name].group==='zmiany'?'zmiany':rok;}
+function kafelki(folder,name){
+  return L.tileLayer('tiles/'+folder+'/'+name+'/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:currentOpacity,attribution:'Landsat 8 / USGS, Planetary Computer'});
+}
 function showLayer(name){
   if(overlay)map.removeLayer(overlay);
   currentLayer=name;
-  overlay=L.tileLayer('tiles/'+name+'/{z}/{x}/{y}.png',{tileSize:256,tms:false,minZoom:cfg.minzoom,maxNativeZoom:cfg.maxzoom,maxZoom:17,bounds:cfg.bounds,noWrap:true,opacity:currentOpacity,attribution:'Landsat 8 / USGS'}).addTo(map);
-  overlay.on('load',()=>document.querySelector('#state').textContent='Warstwa '+name+' gotowa.');
+  overlay=kafelki(folderWarstwy(name),name).addTo(map);
+  overlay.on('load',()=>document.querySelector('#state').textContent='Warstwa '+cfg.layers[name].label+' gotowa.');
   overlay.on('tileerror',()=>document.querySelector('#state').textContent='Nie udało się odczytać kafelka.');
   onLayerChange.forEach(f=>f(name));
 }
- 
+
 // Granica obszaru (AOI).
-fetch('aoi.geojson').then(r=>r.json()).then(g=>L.geoJSON(g,{style:{color:'#143843',weight:1.2,fill:false},interactive:false}).addTo(map));
- 
-// Amelia: opisy warstw i przełącznik
-const opisy={
-  NDVI:'NDVI = (B5 − B4) / (B5 + B4). Wysokie wartości (zielone) oznaczają roślinność.',
-  NDBI:'NDBI = (B6 − B5) / (B6 + B5). Dodatnie wartości mogą wskazywać zabudowę lub odsłoniętą glebę.',
-  MNDWI:'MNDWI = (B3 − B6) / (B3 + B6). Dodatnie wartości wskazują wody powierzchniowe.',
-  RGB:'Kompozycja w naturalnych barwach: kanały B4 / B3 / B2.'
-};
+fetch('aoi.geojson').then(r=>r.json()).then(g=>L.geoJSON(g,{style:{color:'#0f2a33',weight:1.5,fill:false,dashArray:'4 4'},interactive:false}).addTo(map));
+
+// Amelia: opisy warstw i przełącznik (Kamila: lista warstw i opisy pochodzą z obliczeń, cfg.layers)
+const opisy=Object.fromEntries(Object.entries(cfg.layers).map(([k,v])=>[k,v.description]));
 const wybor=document.querySelector('#layer');
+wybor.innerHTML=[['rok','Warstwy wybranego roku'],['zmiany','Zmiany 2015 → 2024']].map(([g,t])=>
+  '<optgroup label="'+t+'">'+Object.entries(cfg.layers).filter(([k,v])=>v.group===g).map(([k,v])=>'<option value="'+k+'">'+v.label+'</option>').join('')+'</optgroup>').join('');
+wybor.value=currentLayer;
 wybor.addEventListener('change',()=>showLayer(wybor.value));
 onLayerChange.push(name=>{document.querySelector('#explain').textContent=opisy[name]||'';});
- 
-// ------------------------------------------------------------
- 
-// Amelia: legenda (pasek kolorów dla wybranej warstwy, ukryty dla RGB)
+
+// Amelia: legenda (pasek kolorów dla wybranej warstwy; Kamila: zakres i jednostka z cfg.layers)
 onLayerChange.push(name=>{
-  const ramp=cfg.ramps&&cfg.ramps[name];
-  document.querySelector('#legend').hidden=!ramp;
-  if(ramp)document.querySelector('#ramp').style.background='linear-gradient(to right,'+ramp.join(',')+')';
+  const w=cfg.layers[name];
+  document.querySelector('#legendTitle').textContent=w.label+(w.group==='rok'?' • '+rok:'');
+  document.querySelector('#legend').hidden=!w.ramp;
+  if(w.ramp){
+    document.querySelector('#ramp').style.background='linear-gradient(to right,'+w.ramp.join(',')+')';
+    const f=v=>(Math.round(v*100)/100).toString().replace('.',',').replace('-','−')+(w.unit&&w.unit!=='Δ NDVI'?' '+w.unit:'');
+    document.querySelector('#legendMin').textContent=f(w.min);
+    document.querySelector('#legendMid').textContent=f((w.min+w.max)/2);
+    document.querySelector('#legendMax').textContent=f(w.max);
+  }
 });
- 
+
 // Amelia: suwak przezroczystości i skala mapy
 document.querySelector('#opacity').addEventListener('input',e=>{
   currentOpacity=Number(e.target.value);
   if(overlay)overlay.setOpacity(currentOpacity);
   document.querySelector('#opacityValue').textContent=Math.round(currentOpacity*100)+'%';
 });
-L.control.scale({imperial:false}).addTo(map);
+L.control.scale({imperial:false,position:'bottomright'}).addTo(map);
 
-// ------------------------------------------------------------
-
-// Kamila: opisy nowych warstw atlasu
-Object.assign(opisy,{
-  KLASY:'Klasyfikacja progowa: woda (MNDWI > 0), gęsta roślinność (NDVI ≥ 0.7), roślinność niska (0.4 ≤ NDVI < 0.7), zabudowa i odkryty grunt (NDVI < 0.4). Uproszczenie bez weryfikacji terenowej.',
-  DEFICYT:'Deficyt zieleni = NDBI − NDVI. Ciemnozielone: dużo roślinności. Jasne, żółtawe: zabudowa i mało zieleni – miejsca, gdzie przydałoby się więcej drzew (np. centrum i Nowa Huta).',
-  PODCZERWIEN:'Fałszywe barwy B5/B4/B3: zdrowa roślinność jest czerwona, zabudowa szaroniebieska, woda ciemna.',
-  MIASTO:'Fałszywe barwy B6/B5/B4: roślinność jest zielona, zabudowa i odkryty grunt różowofioletowe, woda ciemna.'
+// Kamila: legenda kategorii (klasy pokrycia i przejścia klas) oraz komplet, gdy warstwa to zdjęcie
+onLayerChange.push(name=>{
+  const w=cfg.layers[name], lista=w.kind==='classes'?cfg.classes:w.kind==='transitions'?cfg.transitions:null;
+  document.querySelector('#classList').innerHTML=lista?lista.map(c=>
+    '<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:14px;height:14px;border-radius:3px;flex:none;background:'+c.color+'"></span>'+c.name+'</div>').join(''):
+    (w.kind==='composite'?'<span class="opis">'+w.description+'</span>':'');
 });
 
-// Kamila: legenda klas (kolorowe kwadraty z nazwami, tylko dla warstwy KLASY)
-document.querySelector('#classList').innerHTML=cfg.classes.map(c=>
-  '<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'+
-  '<span style="width:16px;height:16px;border-radius:3px;flex:none;background:'+c.color+'"></span>'+c.name+'</div>').join('');
-onLayerChange.push(name=>{document.querySelector('#classLegend').hidden=name!=='KLASY';});
+// Kamila: przełącznik lat 2015 / 2024
+const lata=document.querySelector('#lata');
+lata.innerHTML=Object.keys(cfg.years).map(y=>'<button data-rok="'+y+'"'+(y===rok?' class="on"':'')+'>'+y+'</button>').join('');
+const onYearChange=[];
+function ustawRok(y){
+  rok=y;
+  lata.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.rok===y));
+  showLayer(currentLayer);
+  onYearChange.forEach(f=>f(y));
+}
+lata.addEventListener('click',e=>{if(e.target.dataset.rok)ustawRok(e.target.dataset.rok);});
+document.querySelector('#sceneInfo').innerHTML='<b>Dane</b><br>'+Object.entries(cfg.years).map(([y,s])=>y+': '+s.id+' ('+s.date+')').join('<br>')+
+  '<br>Źródło: USGS Landsat 8 Collection 2 Level-2, archiwum Microsoft Planetary Computer.';
 
-// Kamila: panel statystyk – wykres słupkowy udziału klas i tabela średnich wskaźników
-let statystykiObszaru=null;
-fetch('summary.json').then(r=>r.json()).then(s=>{
-  statystykiObszaru=s;
-  const km2=s.classes.reduce((sum,c)=>sum+c.km2,0);
-  const bars=s.classes.map(c=>
-    '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;gap:6px">'+
-    '<span>'+c.name.split(' (')[0]+'</span><b>'+c.percent.toFixed(1)+'%</b></div>'+
-    '<div style="background:#dde5e4;border-radius:3px;height:10px">'+
-    '<div style="width:'+c.percent+'%;min-width:2px;height:100%;border-radius:3px;background:'+c.color+'"></div></div>'+
-    '<div style="font-size:12px;color:#5b7480">'+c.km2.toLocaleString('pl-PL')+' km²</div></div>').join('');
-  const rows=Object.entries(s.indices).map(([name,v])=>
-    '<tr><td>'+name+'</td><td style="text-align:right">'+v.mean.toFixed(3)+'</td><td style="text-align:right">'+v.median.toFixed(3)+'</td></tr>').join('');
-  document.querySelector('#statsBody').innerHTML=
-    '<p style="margin:0 0 6px">Obszar z ważnymi danymi: <b>'+Math.round(km2).toLocaleString('pl-PL')+' km²</b> '+
-    '('+s.valid_pixels.toLocaleString('pl-PL')+' pikseli 30 × 30 m)</p>'+bars+
-    '<table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:13px">'+
-    '<tr><th style="text-align:left">Wskaźnik</th><th style="text-align:right">średnia</th><th style="text-align:right">mediana</th></tr>'+rows+'</table>';
-}).catch(()=>{document.querySelector('#statsBody').textContent='Statystyki widać po otwarciu strony przez serwer HTTP.';});
+// Kamila: wysuwany panel i zakładki
+const onTabOpen={};
+function otworzZakladke(nazwa){
+  document.body.classList.add('panel-otwarty');
+  document.querySelectorAll('#zakladki button').forEach(b=>b.classList.toggle('on',b.dataset.zakladka===nazwa));
+  document.querySelectorAll('.tresc section[data-zakladka]').forEach(s=>s.classList.toggle('on',s.dataset.zakladka===nazwa));
+  document.querySelectorAll('#narzedzia button').forEach(b=>b.classList.toggle('on',b.dataset.otworz===nazwa));
+  if(onTabOpen[nazwa])onTabOpen[nazwa]();
+}
+function zamknijPanel(){
+  document.body.classList.remove('panel-otwarty');
+  document.querySelectorAll('#narzedzia button').forEach(b=>b.classList.remove('on'));
+}
+document.querySelector('#zakladki').addEventListener('click',e=>{const b=e.target.closest('button');if(b)otworzZakladke(b.dataset.zakladka);});
+document.querySelector('#narzedzia').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  if(b.classList.contains('on'))zamknijPanel(); else otworzZakladke(b.dataset.otworz);
+});
+document.querySelector('#panelBtn').addEventListener('click',()=>document.body.classList.contains('panel-otwarty')?zamknijPanel():otworzZakladke('warstwy'));
+document.querySelector('#panelClose').addEventListener('click',zamknijPanel);
+['narzedzia','legendCard','panel'].forEach(id=>{const el=document.getElementById(id);L.DomEvent.disableClickPropagation(el);L.DomEvent.disableScrollPropagation(el);});
 
-// Kamila: siatka 1 km – miary, skala kolorów i podpowiedź po najechaniu myszą
-const miarySiatki={
-  zielen:{min:40,max:100,kolory:['#fff7bc','#a1d99b','#238b45','#00441b']},
-  zabudowa:{min:0,max:60,kolory:['#fff5eb','#fdae6b','#e6550d','#7f2704']},
-  woda:{min:0,max:20,kolory:['#f7fbff','#9ecae1','#3182bd','#08306b']},
-  ndvi:{min:0.2,max:0.85,kolory:['#d73027','#fee08b','#91cf60','#1a9850']}
-};
-function kolorSkali(v,m){            // płynne przejście między kolorami skali
-  const t=Math.max(0,Math.min(1,(v-m.min)/(m.max-m.min)))*(m.kolory.length-1);
-  const i=Math.min(Math.floor(t),m.kolory.length-2), f=t-i;
-  const a=m.kolory[i].match(/\w\w/g).map(h=>parseInt(h,16)), b=m.kolory[i+1].match(/\w\w/g).map(h=>parseInt(h,16));
-  return 'rgb('+a.map((x,j)=>Math.round(x+(b[j]-x)*f)).join(',')+')';
-}
-function opisKwadratu(p){
-  return '<b>Kwadrat ok. 1 km²</b><br>Zieleń: <b>'+p.zielen+'%</b> (gęsta '+p.gesta+'%, niska '+p.niska+'%)'+
-    '<br>Zabudowa i grunt: <b>'+p.zabudowa+'%</b><br>Woda: <b>'+p.woda+'%</b>'+
-    '<br>NDVI '+p.ndvi.toFixed(2)+' • NDBI '+p.ndbi.toFixed(2)+' • MNDWI '+p.mndwi.toFixed(2);
-}
-let siatka=null;
-const gridMetric=document.querySelector('#gridMetric');
-function odswiezSiatke(){
-  const m=miarySiatki[gridMetric.value];
-  document.querySelector('#gridRamp').style.background='linear-gradient(to right,'+m.kolory.join(',')+')';
-  document.querySelector('#gridTicks').innerHTML='<span>'+(m.min>0?'≤ ':'')+m.min+'</span><span>'+m.max+(m.max>1&&m.max<100?'+':'')+'</span>';
-  if(siatka)siatka.setStyle(f=>({color:'#ffffff',weight:0.4,fillOpacity:0.8,fillColor:kolorSkali(f.properties[gridMetric.value],m)}));
-}
-document.querySelector('#gridOn').addEventListener('change',e=>{
-  if(!e.target.checked){if(siatka)map.removeLayer(siatka);return;}
-  if(siatka){siatka.addTo(map);return;}
-  fetch('siatka.geojson').then(r=>r.json()).then(g=>{
-    siatka=L.geoJSON(g,{onEachFeature:(f,l)=>{
-      l.bindTooltip(()=>opisKwadratu(f.properties),{sticky:true});
-      l.on('mouseover',()=>l.setStyle({weight:2.5,color:'#133e4a'}));
-      l.on('mouseout',()=>l.setStyle({weight:0.4,color:'#ffffff'}));
-    }}).addTo(map);
-    odswiezSiatke();
-  });
-});
-gridMetric.addEventListener('change',odswiezSiatke);
-odswiezSiatke();
+// TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora i kliknięcia w mapę
 
-// Kamila: analiza okolicy – przeglądarka liczy udział klas w kole z rastra analiza.png
-// (kanał R = klasa, G = NDVI zakodowane jako (NDVI + 1) * 127.5)
-let trybAnalizy=false, kolo=null, srodek=null, daneAnalizy=null;
-function wczytajDaneAnalizy(){
-  if(daneAnalizy)return Promise.resolve(daneAnalizy);
-  return new Promise((ok,blad)=>{
-    const img=new Image();
-    img.onload=()=>{
-      const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
-      const ctx=c.getContext('2d'); ctx.drawImage(img,0,0);
-      daneAnalizy=ctx.getImageData(0,0,img.width,img.height).data; ok(daneAnalizy);
-    };
-    img.onerror=blad; img.src=cfg.probe.url;
-  });
-}
-function statystykiKola(punkt,promien){
-  const p=cfg.probe, [[s,w],[n,e]]=p.bounds, dx=(e-w)/p.width, dy=(n-s)/p.height;
-  const mLat=110540, mLng=111320*Math.cos(punkt.lat*Math.PI/180);   // metry na stopień
-  const x0=Math.max(0,Math.floor((punkt.lng-promien/mLng-w)/dx)), x1=Math.min(p.width-1,Math.ceil((punkt.lng+promien/mLng-w)/dx));
-  const y0=Math.max(0,Math.floor((n-punkt.lat-promien/mLat)/dy)), y1=Math.min(p.height-1,Math.ceil((n-punkt.lat+promien/mLat)/dy));
-  const licz=[0,0,0,0,0]; let sumaNdvi=0, wKole=0;
-  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
-    const lng=w+(x+0.5)*dx, lat=n-(y+0.5)*dy;
-    if(Math.hypot((lng-punkt.lng)*mLng,(lat-punkt.lat)*mLat)>promien)continue;   // poza kołem
-    wKole++;
-    const i=(y*p.width+x)*4, k=daneAnalizy[i];
-    if(!k)continue;                                                               // brak danych
-    licz[k]++; sumaNdvi+=daneAnalizy[i+1]/127.5-1;
-  }
-  const razem=licz.slice(1).reduce((a,b)=>a+b,0);
-  return {licz, razem, pokrycie:wKole?razem/wKole:0, ndvi:razem?sumaNdvi/razem:NaN};
-}
-function wykresKolowy(udzialy){   // wykres pierścieniowy SVG: obwód koła r=15.915 to 100 jednostek
-  let suma=0;
-  return '<svg viewBox="0 0 42 42" width="88" height="88" style="flex:none">'+
-    '<circle cx="21" cy="21" r="15.915" fill="none" stroke="#dde5e4" stroke-width="7"/>'+
-    udzialy.map(u=>{const kawalek='<circle cx="21" cy="21" r="15.915" fill="none" stroke="'+u.color+'" stroke-width="7" '+
-      'stroke-dasharray="'+u.p+' '+(100-u.p)+'" stroke-dashoffset="'+(125-suma)+'"/>'; suma+=u.p; return kawalek;}).join('')+'</svg>';
-}
-function analizuj(){
-  if(!srodek)return;
-  const promien=Number(document.querySelector('#radius').value), wynik=document.querySelector('#analyzeResult');
-  if(kolo)map.removeLayer(kolo);
-  kolo=L.circle(srodek,{radius:promien,color:'#133e4a',weight:2,fillOpacity:0.08,dashArray:'6 4',interactive:false}).addTo(map);
-  wczytajDaneAnalizy().then(()=>{
-    const st=statystykiKola(srodek,promien);
-    if(!st.razem){wynik.textContent='W tym miejscu nie ma danych (poza granicą obszaru).';return;}
-    const udzialy=cfg.classes.map(c=>({...c,p:100*st.licz[c.id]/st.razem}));
-    wynik.style.color='#173541';
-    wynik.innerHTML='<div style="display:flex;gap:10px;align-items:center;margin-top:8px">'+wykresKolowy(udzialy)+'<div style="font-size:13px">'+
-      udzialy.map(u=>'<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:10px;height:10px;border-radius:2px;flex:none;background:'+u.color+'"></span>'+
-        u.name.split(' (')[0]+': <b>'+u.p.toFixed(0)+'%</b></div>').join('')+'</div></div>'+
-      '<p style="margin:6px 0 0">Koło '+(Math.PI*promien*promien/1e6).toFixed(2).replace('.',',')+' km² • średnie NDVI <b>'+st.ndvi.toFixed(2)+'</b>'+
-      (st.pokrycie<0.95?' • dane dla '+Math.round(100*st.pokrycie)+'% koła':'')+'</p>';
-  }).catch(()=>{wynik.textContent='Analiza działa po otwarciu strony przez serwer HTTP.';});
-}
-const analyzeBtn=document.querySelector('#analyzeBtn');
-analyzeBtn.addEventListener('click',()=>{
-  trybAnalizy=!trybAnalizy;
-  map.getContainer().style.cursor=trybAnalizy?'crosshair':'';
-  analyzeBtn.textContent=trybAnalizy?'✕ Anuluj wybieranie':'📍 Wybierz miejsce na mapie';
-});
-map.on('click',e=>{
-  if(!trybAnalizy)return;
-  e.analiza=true;              // znacznik dla innych obsług kliknięcia: to kliknięcie należy do analizy
-  trybAnalizy=false; map.getContainer().style.cursor='';
-  analyzeBtn.textContent='📍 Wybierz inne miejsce';
-  srodek=e.latlng; analizuj();
-});
-document.querySelector('#radius').addEventListener('input',e=>{
-  const m=Number(e.target.value);
-  document.querySelector('#radiusValue').textContent=m>=1000?String(m/1000).replace('.',',')+' km':m+' m';
-  analizuj();
-});
-
-// Kamila: wycieczka po atlasie – animowane przeloty między przystankami z opisem i statystykami
-const wycieczka=L.control({position:'topright'});
-let koloWycieczki=null, kontenerWycieczki;
-wycieczka.onAdd=()=>{
-  kontenerWycieczki=L.DomUtil.create('div');
-  L.DomEvent.disableClickPropagation(kontenerWycieczki);
-  L.DomEvent.disableScrollPropagation(kontenerWycieczki);
-  pokazPrzyciskWycieczki();
-  return kontenerWycieczki;
-};
-function pokazPrzyciskWycieczki(){
-  kontenerWycieczki.innerHTML='<button class="tour-btn">▶ Wycieczka po atlasie</button>';
-  kontenerWycieczki.querySelector('button').onclick=()=>przystanek(0);
-}
-function zakonczWycieczke(){
-  if(koloWycieczki)map.removeLayer(koloWycieczki);
-  pokazPrzyciskWycieczki();
-}
-function pasekKlas(udzial){       // poziomy pasek udziałów klas + podpisy
-  return '<div class="tour-bar">'+cfg.classes.map(c=>'<span title="'+c.name+'" style="width:'+udzial[c.id]+'%;background:'+c.color+'"></span>').join('')+'</div>'+
-    '<div style="display:flex;flex-wrap:wrap;gap:3px 10px;font-size:12px">'+cfg.classes.map(c=>
-      '<span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+c.color+'"></span> '+
-      c.name.split(' (')[0]+' <b>'+Math.round(udzial[c.id])+'%</b></span>').join('')+'</div>';
-}
-function przystanek(i){
-  const lista=cfg.tour, ostatni=lista.length;     // krok o numerze lista.length to podsumowanie
-  if(koloWycieczki)map.removeLayer(koloWycieczki);
-  let tresc;
-  if(i<ostatni){
-    const p=lista[i];
-    wybor.value=p.layer; showLayer(p.layer);
-    map.flyTo([p.lat,p.lon],p.zoom,{duration:2.2});
-    koloWycieczki=L.circle([p.lat,p.lon],{radius:p.radius,color:'#ffffff',weight:3,dashArray:'7 6',fill:false,interactive:false}).addTo(map);
-    tresc='<div style="font-size:12px;color:#5b7480">Przystanek '+(i+1)+' z '+ostatni+' • warstwa: '+wybor.options[wybor.selectedIndex].text+'</div>'+
-      '<h3>'+p.title+'</h3><p style="margin:0">'+p.text+'</p>'+
-      '<div style="margin-top:8px;font-size:13px">W kole 500 m: NDVI <b>'+p.ndvi.toFixed(2)+'</b> • NDBI <b>'+p.ndbi.toFixed(2)+'</b> • MNDWI <b>'+p.mndwi.toFixed(2)+'</b></div>'+
-      pasekKlas(p.share);
-  }else{
-    wybor.value='KLASY'; showLayer('KLASY');
-    map.flyToBounds(cfg.bounds,{duration:2.2});
-    const udzial={}; if(statystykiObszaru)statystykiObszaru.classes.forEach(c=>udzial[c.id]=c.percent);
-    tresc='<div style="font-size:12px;color:#5b7480">Podsumowanie</div><h3>Cały obszar</h3>'+
-      '<p style="margin:0">Okolice Krakowa są w większości zielone. Zabudowa skupia się w centrum, w Nowej Hucie i wzdłuż dróg, a część „zabudowy” to w rzeczywistości pola po żniwach.</p>'+
-      (statystykiObszaru?pasekKlas(udzial):'');
-  }
-  kontenerWycieczki.innerHTML='<div class="tour-card">'+tresc+'<div class="tour-nav">'+
-    '<button data-krok="'+(i-1)+'"'+(i===0?' disabled':'')+'>◀ Wstecz</button>'+
-    (i<ostatni?'<button class="main" data-krok="'+(i+1)+'">Dalej ▶</button>':'')+
-    '<button data-krok="koniec">✕ Zakończ</button></div></div>';
-  kontenerWycieczki.querySelectorAll('button').forEach(b=>b.onclick=()=>
-    b.dataset.krok==='koniec'?zakonczWycieczke():przystanek(Number(b.dataset.krok)));
-}
-wycieczka.addTo(map);
- 
-// TODO Rafał: obsługa przycisku "Cały obszar", współrzędnych kursora, suwaka porównania i kliknięcia w mapę
-// Wskazówki: w map.on('click', e => ...) pomiń kliknięcia z e.analiza === true (należą do analizy okolicy).
-// Wartości NDVI i MNDWI w punkcie można odczytać z rastra cfg.probe (patrz funkcja statystykiKola).
- 
 showLayer(currentLayer);
 </script></body></html>
